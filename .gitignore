@@ -1,0 +1,54 @@
+# Python bytecode and tooling caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Test and coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Environment files (keep examples committed)
+.env
+.env.*
+!.env.example
+
+# Local runtime data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Frontend dependency/build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+
+# Logs and temp files
+*.log
+logs/
+tmp/
+temp/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local project artifacts (remove these lines if you intend to track them)
+Ergovision.pdf
+ergovision.txt

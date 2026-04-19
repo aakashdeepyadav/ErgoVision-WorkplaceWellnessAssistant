@@ -1,0 +1,1 @@
+# ErgoVision detectors package
