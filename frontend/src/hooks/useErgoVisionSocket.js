@@ -30,6 +30,7 @@ export function useErgoVisionSocket(wsUrl) {
 
   const wsRef = useRef(null)
   const reconnectTimerRef = useRef(null)
+  const reconnectAttemptRef = useRef(0)
   const shouldReconnectRef = useRef(true)
   const toastTimersRef = useRef(new Set())
 
@@ -127,12 +128,20 @@ export function useErgoVisionSocket(wsUrl) {
     ws.onopen = () => {
       setConnected(true)
       setConnecting(false)
+      setError(null)
       setSessionStart(new Date())
+      reconnectAttemptRef.current = 0
     }
 
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data)
+
+        if (payload.type === 'error') {
+          setError(payload.message || 'Backend error while initializing monitoring.')
+          return
+        }
+
         handlePayload(payload)
       } catch {
         // Ignore malformed payloads and continue the stream.
@@ -144,9 +153,13 @@ export function useErgoVisionSocket(wsUrl) {
       setConnecting(false)
 
       if (shouldReconnectRef.current) {
+        const nextAttempt = reconnectAttemptRef.current + 1
+        reconnectAttemptRef.current = nextAttempt
+        const reconnectDelayMs = Math.min(15000, 1000 * (2 ** (nextAttempt - 1)))
+
         reconnectTimerRef.current = setTimeout(() => {
           connectSocket()
-        }, 3000)
+        }, reconnectDelayMs)
       }
     }
 

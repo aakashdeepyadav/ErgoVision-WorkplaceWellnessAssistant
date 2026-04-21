@@ -24,6 +24,12 @@ class CameraManager:
 
     def start(self):
         """Initialize webcam and MediaPipe models."""
+        if not hasattr(mp, "solutions"):
+            raise RuntimeError(
+                "Incompatible MediaPipe build detected. Use Python 3.12 with the pinned requirements "
+                "(mediapipe==0.10.21)."
+            )
+
         self.cap = cv2.VideoCapture(config.CAMERA_INDEX)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)

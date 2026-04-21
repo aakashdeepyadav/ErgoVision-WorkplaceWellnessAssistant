@@ -3,8 +3,12 @@ ErgoVision — Alert Engine
 Manages alert thresholds, cooldowns, and notification dispatch.
 """
 
+import logging
 import time
 import config
+
+
+logger = logging.getLogger("ergovision.alerts")
 
 
 class AlertEngine:
@@ -70,18 +74,28 @@ class AlertEngine:
 
         # Log to database
         if self.session_id and self.db:
-            self.db.log_event(self.session_id, alert_type, value, reason)
+            try:
+                self.db.log_event(self.session_id, alert_type, value, reason)
+            except Exception:
+                logger.exception(
+                    "Failed to persist alert event (session_id=%s, alert_type=%s).",
+                    self.session_id,
+                    alert_type,
+                )
 
         # Voice alert
         if self.voice:
-            self.voice.speak_alert(alert_type)
+            try:
+                self.voice.speak_alert(alert_type)
+            except Exception:
+                logger.exception("Failed to play voice alert for type '%s'.", alert_type)
 
         # UI callback
         if self._alert_callback:
             message = config.ALERT_MESSAGES.get(alert_type, reason)
             self._alert_callback(alert_type, message)
 
-        print(f"[ALERT] {alert_type}: {reason}")
+        logger.warning("Alert fired: %s (%s)", alert_type, reason)
 
     def check(self):
         """

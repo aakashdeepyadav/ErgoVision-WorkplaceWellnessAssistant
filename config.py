@@ -5,6 +5,38 @@ All detection thresholds, camera settings, and application constants.
 
 import os
 
+
+def _env_str(name: str, default: str) -> str:
+    """Read a non-empty string from env, else fallback to default."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    value = value.strip()
+    return value or default
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer from env, else fallback to default."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _env_csv(name: str, default: list[str]) -> list[str]:
+    """Read comma-separated values from env, else fallback to default list."""
+    value = os.getenv(name)
+    if not value:
+        return default
+
+    parsed = [item.strip() for item in value.split(",") if item.strip()]
+    return parsed or default
+
 # ──────────────────────────────────────────────
 # Eye Fatigue Detection (EAR)
 # ──────────────────────────────────────────────
@@ -69,17 +101,44 @@ ALERT_MESSAGES = {
 # ──────────────────────────────────────────────
 # Camera Settings
 # ──────────────────────────────────────────────
-CAMERA_INDEX = 0               # Default webcam
-CAMERA_WIDTH = 640
-CAMERA_HEIGHT = 480
-TARGET_FPS = 30
+CAMERA_INDEX = _env_int("ERGOVISION_CAMERA_INDEX", 0)  # Default webcam
+CAMERA_WIDTH = _env_int("ERGOVISION_CAMERA_WIDTH", 640)
+CAMERA_HEIGHT = _env_int("ERGOVISION_CAMERA_HEIGHT", 480)
+TARGET_FPS = _env_int("ERGOVISION_TARGET_FPS", 30)
+
+# ──────────────────────────────────────────────
+# API / Runtime Settings
+# ──────────────────────────────────────────────
+API_HOST = _env_str("ERGOVISION_API_HOST", "0.0.0.0")
+API_PORT = _env_int("ERGOVISION_API_PORT", 8000)
+LOG_LEVEL = _env_str("ERGOVISION_LOG_LEVEL", "info").lower()
+FRONTEND_DEV_PORT = _env_int("ERGOVISION_FRONTEND_DEV_PORT", 5174)
+
+_default_frontend_origin = _env_str(
+    "ERGOVISION_FRONTEND_ORIGIN",
+    f"http://localhost:{FRONTEND_DEV_PORT}",
+)
+CORS_ALLOWED_ORIGINS = _env_csv(
+    "ERGOVISION_CORS_ALLOWED_ORIGINS",
+    [
+        _default_frontend_origin,
+        f"http://127.0.0.1:{FRONTEND_DEV_PORT}",
+        f"http://localhost:{API_PORT}",
+        f"http://127.0.0.1:{API_PORT}",
+    ],
+)
+CORS_ALLOW_CREDENTIALS = "*" not in CORS_ALLOWED_ORIGINS
 
 # ──────────────────────────────────────────────
 # Database
 # ──────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-DB_PATH = os.path.join(DATA_DIR, "wellness.db")
+DATA_DIR = os.path.abspath(_env_str("ERGOVISION_DATA_DIR", os.path.join(BASE_DIR, "data")))
+_default_db_path = os.path.join(DATA_DIR, "wellness.db")
+DB_PATH = _env_str("ERGOVISION_DB_PATH", _default_db_path)
+if not os.path.isabs(DB_PATH):
+    DB_PATH = os.path.abspath(os.path.join(BASE_DIR, DB_PATH))
+DB_TIMEOUT_SECONDS = _env_int("ERGOVISION_DB_TIMEOUT_SECONDS", 5)
 
 # ──────────────────────────────────────────────
 # UI Colors (for overlay and PyQt6)

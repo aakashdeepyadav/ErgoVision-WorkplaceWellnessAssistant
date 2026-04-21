@@ -22,7 +22,23 @@ import SparklineChart from "./components/SparklineChart";
 import { DEFAULT_SETTINGS } from "./constants/alerts";
 import { useErgoVisionSocket } from "./hooks/useErgoVisionSocket";
 
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
+function resolveWebSocketUrl() {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const hostname = window.location.hostname || "localhost";
+  const localHosts = new Set(["localhost", "127.0.0.1"]);
+  const backendPort = import.meta.env.VITE_BACKEND_PORT || "8000";
+  const host = localHosts.has(hostname)
+    ? `${hostname}:${backendPort}`
+    : window.location.host;
+
+  return `${protocol}://${host}/ws`;
+}
+
+const WS_URL = resolveWebSocketUrl();
 
 function formatSessionDuration(sessionStart) {
   if (!sessionStart) {

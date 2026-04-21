@@ -3,10 +3,14 @@ ErgoVision — Voice Alert System
 Offline text-to-speech wrapper using pyttsx3.
 """
 
+import logging
 import threading
 import pyttsx3
 
 import config
+
+
+logger = logging.getLogger("ergovision.voice")
 
 
 class VoiceAlert:
@@ -60,8 +64,8 @@ class VoiceAlert:
                 engine.say(message)
                 engine.runAndWait()
                 engine.stop()
-            except Exception as e:
-                print(f"[VoiceAlert] TTS error: {e}")
+            except Exception:
+                logger.exception("TTS engine error.")
             finally:
                 self._speaking = False
 

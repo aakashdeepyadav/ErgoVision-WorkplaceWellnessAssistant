@@ -79,17 +79,40 @@ ErgoVision/
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.11 or 3.12 (3.12 recommended)
 - Node.js 18+
 - Webcam
 
-### 1. Install backend dependencies
+### 1. One-command setup (recommended)
+
+Windows PowerShell:
+
+```powershell
+./scripts/setup.ps1
+```
+
+macOS/Linux:
+
+```bash
+bash scripts/setup.sh
+```
+
+### 2. Manual setup (optional)
+
+Copy environment templates:
+
+```bash
+cp .env.example .env
+cp frontend/.env.example frontend/.env
+```
+
+Install backend dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Install frontend dependencies
+Install frontend dependencies:
 
 ```bash
 cd frontend
@@ -117,7 +140,7 @@ http://localhost:5174
 
 ## Runtime Flow
 
-1. Frontend connects to `ws://localhost:8000/ws`.
+1. Frontend connects to `VITE_WS_URL` or auto-resolves the backend WebSocket URL.
 2. Backend starts camera + monitoring session on first client connect.
 3. Calibration runs if not previously stored.
 4. Each frame updates detector state and optional alerts.
@@ -128,6 +151,7 @@ http://localhost:5174
 ## API Endpoints
 
 - `GET /api/status`: current shared runtime state.
+- `GET /api/health`: service readiness and pipeline state.
 - `GET /api/sessions`: recent sessions.
 - `GET /api/sessions/{id}/events`: alert events for a session.
 - `GET /api/sessions/{id}/snapshots`: periodic detector snapshots.
@@ -136,12 +160,31 @@ http://localhost:5174
 
 ## Configuration
 
-Edit `config.py` for:
+Runtime defaults live in `config.py`, and can be overridden with environment variables via `.env`.
+
+Common backend variables:
+
+- `ERGOVISION_API_HOST`, `ERGOVISION_API_PORT`, `ERGOVISION_LOG_LEVEL`
+- `ERGOVISION_CORS_ALLOWED_ORIGINS` (comma-separated)
+- `ERGOVISION_CAMERA_INDEX`, `ERGOVISION_CAMERA_WIDTH`, `ERGOVISION_CAMERA_HEIGHT`, `ERGOVISION_TARGET_FPS`
+- `ERGOVISION_DATA_DIR`, `ERGOVISION_DB_PATH`, `ERGOVISION_DB_TIMEOUT_SECONDS`
+
+Common frontend variables:
+
+- `VITE_WS_URL` (explicit websocket URL override)
+- `VITE_BACKEND_HOST`, `VITE_BACKEND_PORT` (used by fallback URL and Vite proxy)
+
+Detector tuning still lives in `config.py`:
 
 - Detection thresholds (`EAR_THRESHOLD`, `MIN_DISTANCE_CM`, etc.)
 - Alert cooldown (`ALERT_COOLDOWN_SECONDS`)
-- Camera settings (`CAMERA_WIDTH`, `CAMERA_HEIGHT`, `TARGET_FPS`)
-- Paths (`DATA_DIR`, `DB_PATH`)
+
+## Data Persistence
+
+- SQLite database: `data/wellness.db`
+- Calibration cache: `data/calibration.json`
+
+Back up the `data/` folder if you want to preserve history and calibration across machines.
 
 ## Testing
 
@@ -167,7 +210,9 @@ npm run build
 
 ## Troubleshooting
 
-- Camera unavailable: verify camera is not locked by another process.
-- WebSocket not connecting: confirm backend is running on port 8000.
+- Camera unavailable: verify camera permissions and ensure no other app is locking the webcam.
+- WebSocket not connecting: check backend logs and verify `.env` host/port values.
 - No detection data: ensure face and shoulders are visible during calibration.
-- Missing frontend data: confirm browser can reach `ws://localhost:8000/ws`.
+- Frontend can load but no realtime stream: set `VITE_WS_URL` or `VITE_BACKEND_HOST`/`VITE_BACKEND_PORT` in `frontend/.env`.
+- Port already in use: set `ERGOVISION_API_PORT` to a free value and restart.
+- `AttributeError: module 'mediapipe' has no attribute 'solutions'`: recreate `.venv` with Python 3.12 and reinstall dependencies (`scripts/setup.ps1` or `scripts/setup.sh`).

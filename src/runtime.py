@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import time
 from threading import Lock
 from typing import Any
@@ -27,6 +28,9 @@ from .detectors.fatigue_score import FatigueScoreDetector
 from .detectors.posture import PostureDetector
 from .session_state import SessionState
 from .voice_alert import VoiceAlert
+
+
+logger = logging.getLogger("ergovision.runtime")
 
 
 class ErgoVisionRuntime:
@@ -80,6 +84,8 @@ class ErgoVisionRuntime:
             self.camera.start()
             self.is_running = True
             self.current_session_id = self.db.start_session()
+            if self.current_session_id is None:
+                logger.warning("Monitoring started without persisted session id.")
             self.alert_engine.set_session_id(self.current_session_id)
             self.snapshot_timer = time.time()
 
@@ -94,7 +100,9 @@ class ErgoVisionRuntime:
 
             ended_session_id = self.current_session_id
             if ended_session_id:
-                self.db.end_session(ended_session_id)
+                closed = self.db.end_session(ended_session_id)
+                if not closed:
+                    logger.warning("Failed to close session '%s' in database.", ended_session_id)
 
             self.current_session_id = None
             return ended_session_id
@@ -193,7 +201,7 @@ class ErgoVisionRuntime:
             now = time.time()
             if self.current_session_id and (now - self.snapshot_timer) >= 30:
                 self.snapshot_timer = now
-                self.db.log_snapshot(
+                logged = self.db.log_snapshot(
                     self.current_session_id,
                     eye_status["ear"],
                     eye_status["blink_rate"],
@@ -201,6 +209,11 @@ class ErgoVisionRuntime:
                     distance_status["distance_cm"],
                     fatigue_status["fatigue_score"],
                 )
+                if not logged:
+                    logger.warning(
+                        "Failed to persist snapshot for session '%s'.",
+                        self.current_session_id,
+                    )
 
             data = {
                 "type": "detection",
@@ -236,6 +249,7 @@ class ErgoVisionRuntime:
         try:
             data = json.loads(raw_message)
         except json.JSONDecodeError:
+            logger.debug("Ignoring malformed client message: %s", raw_message)
             return
 
         command = data.get("command")
