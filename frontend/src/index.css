@@ -690,6 +690,14 @@ body::before {
   background: var(--accent-red);
 }
 
+.alert-feed__dot--tilt {
+  background: var(--accent-purple);
+}
+
+.alert-feed__dot--break {
+  background: var(--accent-teal);
+}
+
 .alert-feed__text {
   color: var(--ink-base);
   font-size: 0.78rem;
@@ -856,6 +864,14 @@ body::before {
 
 .toast__item--fatigue {
   border-left: 4px solid var(--accent-red);
+}
+
+.toast__item--tilt {
+  border-left: 4px solid var(--accent-purple);
+}
+
+.toast__item--break {
+  border-left: 4px solid var(--accent-teal);
 }
 
 .toast__label {

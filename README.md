@@ -2,44 +2,61 @@
 
 ErgoVision is a realtime workstation wellness monitor built with Python, FastAPI, MediaPipe, and React.
 
-It tracks four health signals from a standard webcam and provides immediate alerts plus session analytics:
+It tracks **six health signals** from a standard webcam and provides immediate alerts plus session analytics:
 
-- Eye fatigue (EAR + blink rate)
-- Posture drift (nose-shoulder baseline deviation)
-- Screen distance (iris-based pinhole estimation)
-- Fatigue trend (yawn pattern + composite score)
+- **Eye fatigue** — EAR formula + blink rate tracking
+- **Posture drift** — nose-shoulder baseline deviation + shoulder asymmetry
+- **Screen distance** — iris-based pinhole estimation
+- **Fatigue trend** — yawn pattern (MAR) + composite score with session-duration weighting
+- **Head tilt / neck strain** — sustained head roll detection via eye-corner geometry
+- **Gaze tracking** — prolonged stare detection via iris saccade monitoring
+
+### Additional Features
+
+- 🌗 **Dark mode** — full dark/light theme toggle
+- ☕ **20-20-20 break reminders** — adaptive break intervals based on fatigue level
+- 📊 **Wellness ring** — animated SVG ring showing real-time composite wellness score
+- 🎯 **Gaze indicator** — directional dot overlaid on webcam feed
+- 📈 **Productivity tracker** — healthy vs degraded time correlation
+- 🔔 **Progressive alert escalation** — cooldown reduces when alerts are ignored
+- 📥 **CSV export** + daily/weekly summary analytics
 
 ## Why This Project Is Production-Oriented
 
 - Clear separation between API transport and runtime orchestration.
-- Detector logic isolated into focused modules.
+- Detector logic isolated into focused, testable modules.
 - Frontend split into reusable components and a dedicated WebSocket hook.
-- Persistent local analytics with SQLite.
+- Persistent local analytics with SQLite (sessions, events, snapshots, breaks, daily summaries).
 - Runtime calibration persistence for repeat sessions.
-- Unit tests for state and alert engine behavior.
+- Unit tests for state, alert engine, detectors, and database operations.
+- Zero ML — geometry-first approach using only MediaPipe landmarks.
 
 ## Architecture
 
 ```text
 Webcam -> MediaPipe landmarks -> Detector modules -> SessionState -> AlertEngine
+                                                  -> Break Manager
+                                                  -> Productivity Tracker
                                                   -> Snapshot/Event logging (SQLite)
                                                   -> WebSocket stream -> React dashboard
 ```
 
 ### Backend Layers
 
-- `server.py`: FastAPI entrypoint and HTTP/WebSocket routes.
+- `server.py`: FastAPI entrypoint, HTTP/WebSocket routes, REST analytics API.
 - `src/runtime.py`: monitoring lifecycle, frame processing, command handling.
-- `src/detectors/`: eye, posture, distance, and fatigue detectors.
-- `src/alert_engine.py`: alert cooldown and dispatch.
+- `src/detectors/`: eye fatigue, posture, distance, fatigue score, head tilt.
+- `src/alert_engine.py`: alert cooldown, progressive escalation, and dispatch.
+- `src/break_manager.py`: 20-20-20 rule tracking and compliance scoring.
+- `src/productivity_tracker.py`: healthy/degraded/absent time correlation.
 - `src/calibration.py`: posture/distance calibration state machine.
-- `src/database.py`: SQLite schema and query operations.
+- `src/database.py`: SQLite schema, migrations, and query operations.
 
 ### Frontend Layers
 
-- `frontend/src/App.jsx`: top-level page composition.
-- `frontend/src/hooks/useErgoVisionSocket.js`: stream state and reconnection.
-- `frontend/src/components/`: modular UI sections.
+- `frontend/src/App.jsx`: top-level page with dark mode, 5 metric cards, break overlay.
+- `frontend/src/hooks/useErgoVisionSocket.js`: stream state, reconnection, break tracking.
+- `frontend/src/components/`: modular UI — WellnessRing, BreakReminder, GazeIndicator, MetricCard, AnalyticsModal, SettingsDrawer, SparklineChart, CalibrationOverlay, ConnectionState.
 - `frontend/src/constants/alerts.js`: alert metadata and defaults.
 
 ## Project Structure
@@ -54,6 +71,8 @@ ErgoVision/
 │   ├── camera.py
 │   ├── session_state.py
 │   ├── alert_engine.py
+│   ├── break_manager.py
+│   ├── productivity_tracker.py
 │   ├── calibration.py
 │   ├── database.py
 │   ├── voice_alert.py
@@ -61,18 +80,35 @@ ErgoVision/
 │       ├── eye_fatigue.py
 │       ├── posture.py
 │       ├── distance.py
-│       └── fatigue_score.py
+│       ├── fatigue_score.py
+│       └── head_tilt.py
 ├── frontend/
 │   ├── package.json
 │   └── src/
 │       ├── App.jsx
 │       ├── index.css
 │       ├── hooks/
+│       │   └── useErgoVisionSocket.js
 │       ├── components/
+│       │   ├── AnalyticsModal.jsx
+│       │   ├── BreakReminder.jsx
+│       │   ├── CalibrationOverlay.jsx
+│       │   ├── ConnectionState.jsx
+│       │   ├── GazeIndicator.jsx
+│       │   ├── MetricCard.jsx
+│       │   ├── SettingsDrawer.jsx
+│       │   ├── SparklineChart.jsx
+│       │   └── WellnessRing.jsx
 │       └── constants/
-└── tests/
-    ├── test_session_state.py
-    └── test_alert_engine.py
+│           └── alerts.js
+├── tests/
+│   ├── test_alert_engine.py
+│   ├── test_database.py
+│   ├── test_detectors.py
+│   └── test_session_state.py
+└── data/
+    ├── wellness.db
+    └── calibration.json
 ```
 
 ## Quick Start
@@ -143,20 +179,28 @@ http://localhost:5174
 1. Frontend connects to `VITE_WS_URL` or auto-resolves the backend WebSocket URL.
 2. Backend starts camera + monitoring session on first client connect.
 3. Calibration runs if not previously stored.
-4. Each frame updates detector state and optional alerts.
-5. Alerts are rate-limited by cooldown policy.
-6. Snapshots are logged every 30 seconds.
-7. Session is closed when last client disconnects.
+4. Each frame updates all detector states (eye, posture, distance, fatigue, head tilt, gaze).
+5. Break manager tracks time since last break with adaptive intervals.
+6. Productivity tracker correlates healthy vs degraded time.
+7. Alerts are rate-limited by cooldown policy with progressive escalation.
+8. Snapshots are logged every 30 seconds.
+9. Session is closed when last client disconnects.
 
 ## API Endpoints
 
-- `GET /api/status`: current shared runtime state.
-- `GET /api/health`: service readiness and pipeline state.
-- `GET /api/sessions`: recent sessions.
-- `GET /api/sessions/{id}/events`: alert events for a session.
-- `GET /api/sessions/{id}/snapshots`: periodic detector snapshots.
-- `GET /api/analytics`: recent snapshots and aggregate event counts.
-- `GET /api/calibration`: calibration phase and flags.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/status` | Current shared runtime state |
+| GET | `/api/health` | Service readiness and pipeline state |
+| GET | `/api/sessions` | Recent sessions |
+| GET | `/api/sessions/{id}/events` | Alert events for a session |
+| GET | `/api/sessions/{id}/snapshots` | Periodic detector snapshots |
+| GET | `/api/analytics` | Recent snapshots and aggregate event counts |
+| GET | `/api/calibration` | Calibration phase and flags |
+| GET | `/api/daily-summary` | Daily aggregated health report |
+| GET | `/api/weekly-report` | Weekly trend summary |
+| GET | `/api/break-stats` | Break compliance data |
+| POST | `/api/recalibrate` | Trigger recalibration |
 
 ## Configuration
 
@@ -176,13 +220,16 @@ Common frontend variables:
 
 Detector tuning still lives in `config.py`:
 
-- Detection thresholds (`EAR_THRESHOLD`, `MIN_DISTANCE_CM`, etc.)
+- Detection thresholds (`EAR_THRESHOLD`, `MIN_DISTANCE_CM`, `HEAD_TILT_THRESHOLD_DEG`, etc.)
 - Alert cooldown (`ALERT_COOLDOWN_SECONDS`)
+- Break intervals (`BREAK_INTERVAL_SECONDS`, `MIN_BREAK_DURATION_SECONDS`)
+- Gaze tracking (`GAZE_STARE_SECONDS`, `GAZE_MOVEMENT_THRESHOLD`)
 
 ## Data Persistence
 
 - SQLite database: `data/wellness.db`
 - Calibration cache: `data/calibration.json`
+- Tables: `sessions`, `events`, `snapshots`, `break_events`, `daily_summaries`
 
 Back up the `data/` folder if you want to preserve history and calibration across machines.
 
@@ -207,6 +254,7 @@ npm run build
 - Processing is local only.
 - Raw frames are streamed to local dashboard only; not persisted.
 - SQLite stores derived numeric metrics and alert metadata.
+- Zero data leaves the machine.
 
 ## Camera Permissions
 
