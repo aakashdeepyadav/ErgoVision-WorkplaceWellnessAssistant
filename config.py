@@ -85,10 +85,35 @@ RIGHT_LIP_CORNER = 291
 LIP_INDICES = [61, 291, 0, 17, 13, 14]
 
 # ──────────────────────────────────────────────
+# Head Tilt / Neck Angle Detection
+# ──────────────────────────────────────────────
+HEAD_TILT_THRESHOLD_DEG = 15   # Degrees — alert if head tilted beyond this
+HEAD_TILT_SUSTAINED_SECONDS = 10  # Must be sustained for this duration
+
+# ──────────────────────────────────────────────
+# Gaze / Prolonged Stare Detection
+# ──────────────────────────────────────────────
+GAZE_STARE_SECONDS = 30       # Seconds without natural saccade = stare alert
+GAZE_MOVEMENT_THRESHOLD = 0.015  # Minimum iris shift ratio to count as saccade
+
+# ──────────────────────────────────────────────
+# Break Manager (20-20-20 Rule)
+# ──────────────────────────────────────────────
+BREAK_INTERVAL_SECONDS = 20 * 60  # 20 minutes
+MIN_BREAK_DURATION_SECONDS = 20   # 20 seconds minimum to count as a break
+
+# ──────────────────────────────────────────────
 # Alert Engine
 # ──────────────────────────────────────────────
 ALERT_COOLDOWN_SECONDS = 300   # 5 minutes between same alert type
 ALERT_POPUP_DURATION_MS = 8000  # Auto-dismiss popup after 8 seconds
+
+# Progressive alert escalation — cooldown reduces after being ignored
+ALERT_ESCALATION_LEVELS = {
+    0: 1.0,    # Normal cooldown
+    1: 0.7,    # 70% cooldown after first ignore
+    2: 0.5,    # 50% cooldown after second ignore
+}
 
 # Alert messages for voice TTS
 ALERT_MESSAGES = {
@@ -96,6 +121,9 @@ ALERT_MESSAGES = {
     "POOR_POSTURE": "Your posture has drifted. Please sit upright and align your shoulders.",
     "TOO_CLOSE": "You are sitting too close to the screen. Please move back to a comfortable distance.",
     "FATIGUE": "Multiple yawns detected. Consider taking a short break to refresh.",
+    "HEAD_TILT": "Your head is tilted to one side. Straighten your neck to reduce strain.",
+    "PROLONGED_STARE": "You have been staring without blinking for a long time. Look away briefly.",
+    "TAKE_BREAK": "You have been working for over 20 minutes. Take a 20-second break and look away.",
 }
 
 # ──────────────────────────────────────────────

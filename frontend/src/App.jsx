@@ -1,395 +1,482 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState, useEffect } from "react";
 import {
-  Activity,
-  AlertTriangle,
-  BarChart3,
-  Brain,
-  Eye,
-  RefreshCw,
-  Ruler,
-  Settings,
-  Volume2,
-  VolumeX,
+  Eye, Ruler, Activity, Gauge, Brain,
+  Settings, BarChart3, Maximize2, Minimize2,
+  Clock, Bell, Sun, Moon, AlertTriangle,
 } from "lucide-react";
-
-import "./App.css";
-import AnalyticsModal from "./components/AnalyticsModal";
-import CalibrationOverlay from "./components/CalibrationOverlay";
-import ConnectionState from "./components/ConnectionState";
-import MetricCard from "./components/MetricCard";
-import SettingsDrawer from "./components/SettingsDrawer";
-import SparklineChart from "./components/SparklineChart";
-import { DEFAULT_SETTINGS } from "./constants/alerts";
 import { useErgoVisionSocket } from "./hooks/useErgoVisionSocket";
+import { DEFAULT_SETTINGS } from "./constants/alerts";
+import ConnectionState from "./components/ConnectionState";
+import CalibrationOverlay from "./components/CalibrationOverlay";
+import MetricCard from "./components/MetricCard";
+import SparklineChart from "./components/SparklineChart";
+import WellnessRing from "./components/WellnessRing";
+import GazeIndicator from "./components/GazeIndicator";
+import BreakReminder from "./components/BreakReminder";
+import SettingsDrawer from "./components/SettingsDrawer";
 
-function resolveWebSocketUrl() {
-  if (import.meta.env.VITE_WS_URL) {
-    return import.meta.env.VITE_WS_URL;
-  }
+const AnalyticsModal = lazy(() => import("./components/AnalyticsModal"));
 
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const hostname = window.location.hostname || "localhost";
-  const localHosts = new Set(["localhost", "127.0.0.1"]);
-  const backendPort = import.meta.env.VITE_BACKEND_PORT || "8000";
-  const host = localHosts.has(hostname)
-    ? `${hostname}:${backendPort}`
-    : window.location.host;
+const WS_URL =
+  import.meta.env.VITE_WS_URL ||
+  `ws://${import.meta.env.VITE_BACKEND_HOST || location.hostname}:${import.meta.env.VITE_BACKEND_PORT || "8000"}/ws`;
 
-  return `${protocol}://${host}/ws`;
+function formatDuration(start) {
+  if (!start) return "--:--";
+  const s = Math.floor((Date.now() - start.getTime()) / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+    : `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-const WS_URL = resolveWebSocketUrl();
-
-function formatSessionDuration(sessionStart) {
-  if (!sessionStart) {
-    return "00:00";
-  }
-
-  const elapsedSeconds = Math.floor(
-    (Date.now() - sessionStart.getTime()) / 1000,
-  );
-  const minutes = Math.floor(elapsedSeconds / 60)
-    .toString()
-    .padStart(2, "0");
-  const seconds = (elapsedSeconds % 60).toString().padStart(2, "0");
-  return `${minutes}:${seconds}`;
+function formatBreakTime(seconds) {
+  if (!seconds || seconds < 60) return "< 1 min";
+  const m = Math.floor(seconds / 60);
+  return `${m} min`;
 }
 
-function metricStatus({ alert, warning = false }) {
-  if (alert) {
-    return "alert";
-  }
-  if (warning) {
-    return "warning";
-  }
-  return "good";
+function computeTrend(history, key) {
+  if (history.length < 10) return { direction: "steady", label: "Collecting" };
+  const recent = history.slice(-20);
+  const first = recent.slice(0, 10).reduce((s, h) => s + (h[key] || 0), 0) / 10;
+  const last = recent.slice(-10).reduce((s, h) => s + (h[key] || 0), 0) / 10;
+  const d = last - first;
+  if (Math.abs(d) < 0.5) return { direction: "steady", label: "Stable" };
+  return d > 0
+    ? { direction: "up", label: "Rising" }
+    : { direction: "down", label: "Falling" };
+}
+
+function wellnessScore(data) {
+  if (!data || data.type !== "detection") return 0;
+  let score = 100;
+  if (data.eye?.alert) score -= 20;
+  if (data.posture?.alert) score -= 20;
+  if (data.distance?.alert) score -= 15;
+  if (data.fatigue?.alert) score -= 15;
+  if (data.head_tilt?.alert) score -= 15;
+  if (data.eye?.stare_alert) score -= 10;
+  return Math.max(0, Math.min(100, score));
+}
+
+function wellnessLabel(score) {
+  if (score >= 80) return { text: "Excellent", tier: "excellent" };
+  if (score >= 60) return { text: "Balanced", tier: "balanced" };
+  if (score >= 35) return { text: "At Risk", tier: "risk" };
+  return { text: "Critical", tier: "critical" };
 }
 
 export default function App() {
   const {
-    connected,
-    connecting,
-    error,
-    frame,
-    data,
-    alerts,
-    toasts,
-    history,
-    sessionStart,
-    connect,
-    sendCommand,
-  } = useErgoVisionSocket(WS_URL);
+    connected, connecting, error, frame, data,
+    alerts, toasts, history, sessionStart, breakDue,
+    connect, sendCommand,
+  } = useErgoVisionSocket(WS_URL, { autoConnect: false });
 
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
-  const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [sessionTime, setSessionTime] = useState("00:00");
+  const [focusMode, setFocusMode] = useState(false);
+  const [alertFilter, setAlertFilter] = useState("all");
+  const [showBreakReminder, setShowBreakReminder] = useState(false);
+  const [breakDismissed, setBreakDismissed] = useState(false);
+  const [theme, setTheme] = useState(() =>
+    localStorage.getItem("ergovision-theme") || "light"
+  );
 
+  // Apply theme
   useEffect(() => {
-    const timer = setInterval(() => {
-      setSessionTime(formatSessionDuration(sessionStart));
-    }, 1000);
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("ergovision-theme", theme);
+  }, [theme]);
 
-    return () => clearInterval(timer);
-  }, [sessionStart]);
+  // Show break reminder when break is due
+  useEffect(() => {
+    if (breakDue && !breakDismissed) {
+      setShowBreakReminder(true);
+    }
+    if (!breakDue) {
+      setBreakDismissed(false);
+    }
+  }, [breakDue, breakDismissed]);
 
-  const eyeData = data?.eye ?? {};
-  const postureData = data?.posture ?? {};
-  const distanceData = data?.distance ?? {};
-  const fatigueData = data?.fatigue ?? {};
+  const score = useMemo(() => wellnessScore(data), [data]);
+  const wLabel = useMemo(() => wellnessLabel(score), [score]);
 
-  const fps = data?.fps ?? 0;
-  const faceDetected = data?.face_detected ?? false;
+  const isDetecting = data?.type === "detection";
+  const isCalibrating = data?.type === "calibration";
 
-  const isCalibrationMode = data?.type === "calibration";
-  const shouldShowCalibration = isCalibrationMode && data?.phase !== "complete";
-
-  const recentSamples = useMemo(() => history.slice(-80), [history]);
-
-  const handleStartCalibration = () => sendCommand("start_calibration");
-  const handleSkipCalibration = () => sendCommand("skip_calibration");
-  const handleRecalibrate = () => sendCommand("recalibrate");
-
-  const handleToggleVoice = () => {
-    setVoiceEnabled((previous) => !previous);
-    sendCommand("toggle_voice");
-  };
-
-  const handleSaveSettings = () => {
-    sendCommand("update_settings", {
-      settings: {
-        ...settings,
-        voice_enabled: voiceEnabled,
-      },
-    });
+  const handleSaveSettings = useCallback(() => {
+    sendCommand("update_settings", { settings });
     setShowSettings(false);
-  };
+  }, [sendCommand, settings]);
 
-  if (!connected) {
+  const handleToggleVoice = useCallback(() => {
+    setVoiceEnabled((v) => !v);
+    sendCommand("toggle_voice");
+  }, [sendCommand]);
+
+  const handleAcknowledgeBreak = useCallback(() => {
+    sendCommand("acknowledge_break");
+    setShowBreakReminder(false);
+    setBreakDismissed(true);
+  }, [sendCommand]);
+
+  const handleDismissBreak = useCallback(() => {
+    setShowBreakReminder(false);
+    setBreakDismissed(true);
+  }, []);
+
+  const filteredAlerts = useMemo(() => {
+    if (alertFilter === "all") return alerts;
+    return alerts.filter((a) => a.color === alertFilter);
+  }, [alerts, alertFilter]);
+
+  const alertCounts = useMemo(() => {
+    const counts = {};
+    for (const a of alerts) {
+      counts[a.color] = (counts[a.color] || 0) + 1;
+    }
+    return counts;
+  }, [alerts]);
+
+  const sparkData = useMemo(() => history.slice(-30), [history]);
+
+  // ── Not connected ────────────────────────────
+  if (!connected && !connecting) {
+    return <ConnectionState connecting={connecting} error={error} onConnect={connect} />;
+  }
+
+  if (connecting) {
+    return <ConnectionState connecting error={error} onConnect={connect} />;
+  }
+
+  // ── Calibration ──────────────────────────────
+  if (isCalibrating) {
     return (
-      <ConnectionState
-        connecting={connecting}
-        error={error}
-        onConnect={connect}
-      />
+      <div className="app-container">
+        <CalibrationOverlay
+          phase={data?.phase || "idle"}
+          progress={data?.progress}
+          message={data?.message}
+          onStart={() => sendCommand("start_calibration")}
+          onSkip={() => sendCommand("skip_calibration")}
+        />
+      </div>
     );
   }
 
-  if (shouldShowCalibration) {
-    return (
-      <CalibrationOverlay
-        phase={data.phase}
-        progress={data.progress}
-        message={data.message}
-        onStart={handleStartCalibration}
-        onSkip={handleSkipCalibration}
-      />
-    );
-  }
+  const breakStatus = data?.break_status || {};
+  const productivity = data?.productivity || {};
+
+  // Break pill class
+  const breakPillClass = breakStatus.break_overdue
+    ? "break-pill break-pill--overdue"
+    : breakStatus.break_due
+      ? "break-pill break-pill--due"
+      : "break-pill break-pill--ok";
 
   return (
-    <div className="app-container">
-      <div className="toast" role="status" aria-live="polite">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`toast__item toast__item--${toast.color}`}
-          >
-            <div className="toast__label">{toast.label}</div>
-            <div className="toast__text">{toast.message}</div>
-          </div>
-        ))}
-      </div>
-
+    <div className={`app-container ${focusMode ? "app-container--focus" : ""}`}>
+      {/* ── Header ──────────────────────────── */}
       <header className="app-header">
         <div className="app-header__brand">
           <div className="app-header__logo">EV</div>
           <div>
-            <h1 className="app-header__title">ErgoVision</h1>
-            <p className="app-header__subtitle">
-              Occupational Health Monitoring
-            </p>
+            <div className="app-header__title">ErgoVision</div>
+            <div className="app-header__subtitle">Workplace Wellness</div>
           </div>
         </div>
-
         <div className="app-header__actions">
-          <div
-            className={`app-header__status ${connected ? "app-header__status--active" : "app-header__status--inactive"}`}
-          >
+          <span className={breakPillClass}>
+            <Clock size={12} />
+            {formatBreakTime(breakStatus.time_since_break)}
+          </span>
+          <span className={`app-header__status ${connected ? "app-header__status--active" : "app-header__status--inactive"}`}>
             <span className="app-header__status-dot" />
-            {connected ? "Live Monitoring" : "Offline"}
-          </div>
-
+            {connected ? "Live" : "Idle"}
+          </span>
           <button
-            className="btn btn--icon btn--ghost"
-            title="Toggle voice alerts"
-            onClick={handleToggleVoice}
+            className="theme-toggle"
+            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            title="Toggle theme"
           >
-            {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
           <button
-            className="btn btn--icon btn--ghost"
-            title="Open analytics"
+            className={`btn btn--ghost btn--icon ${focusMode ? "btn--active" : ""}`}
+            onClick={() => setFocusMode((f) => !f)}
+            title="Focus mode"
+          >
+            {focusMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+          <button
+            className="btn btn--ghost btn--icon"
             onClick={() => setShowAnalytics(true)}
+            title="Analytics"
           >
             <BarChart3 size={16} />
           </button>
           <button
-            className="btn btn--icon btn--ghost"
-            title="Open settings"
+            className="btn btn--ghost btn--icon"
             onClick={() => setShowSettings(true)}
+            title="Settings"
           >
             <Settings size={16} />
           </button>
         </div>
       </header>
 
+      {/* ── Toasts ──────────────────────────── */}
+      {toasts.length > 0 && (
+        <div className="toast">
+          {toasts.map((t) => (
+            <div key={t.id} className={`toast__item toast__item--${t.color}`}>
+              <div className="toast__label">{t.label}</div>
+              <div className="toast__text">{t.message}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Main ────────────────────────────── */}
       <main className="app-main">
         <section className="webcam-panel">
+          {/* Insight Strip */}
+          <div className="insight-strip">
+            <article className={`insight-card insight-card--${wLabel.tier}`}>
+              <div className="insight-card__eyebrow">Wellness Score</div>
+              <WellnessRing score={score} size={110} />
+              <div className={`risk-pill risk-pill--${wLabel.tier}`}>
+                {wLabel.text}
+              </div>
+            </article>
+
+            <article className="insight-card">
+              <div className="insight-card__eyebrow">Session Stats</div>
+              <div className="insight-card__stat">
+                <span>Duration</span>
+                <strong>{formatDuration(sessionStart)}</strong>
+              </div>
+              <div className="insight-card__stat">
+                <span>Healthy</span>
+                <strong>{formatBreakTime(productivity.healthy_time)}</strong>
+              </div>
+              <div className="insight-card__stat">
+                <span>Score</span>
+                <strong>{productivity.session_score || 0}%</strong>
+              </div>
+              <div className="insight-card__stat">
+                <span>Breaks</span>
+                <strong>{breakStatus.breaks_taken || 0}</strong>
+              </div>
+            </article>
+
+            <article className="insight-card insight-card--action">
+              <div className="insight-card__eyebrow">Quick Actions</div>
+              <div className="insight-card__text">
+                {score >= 80 ? "Your workspace setup looks great. Keep it up!" :
+                 score >= 60 ? "Minor adjustments needed. Check the metric cards below." :
+                 "Multiple issues detected. Review your posture and take a break."}
+              </div>
+              {focusMode ? (
+                <div className="focus-hint">Focus Mode Active</div>
+              ) : null}
+              <button
+                className="btn btn--ghost btn--sm"
+                onClick={() => sendCommand("recalibrate")}
+              >
+                Recalibrate
+              </button>
+            </article>
+          </div>
+
+          {/* Webcam */}
           <div className="webcam-frame">
             {frame ? (
-              <img
-                src={`data:image/jpeg;base64,${frame}`}
-                alt="Realtime webcam stream"
-              />
+              <img src={`data:image/jpeg;base64,${frame}`} alt="Webcam" />
             ) : (
               <div className="webcam-frame__placeholder">
                 <div className="webcam-frame__placeholder-icon">Camera</div>
-                <span>Waiting for camera feed</span>
+                <span className="text-muted">Waiting for frame data…</span>
               </div>
             )}
-
-            {frame ? (
+            {frame && (
               <>
-                <div className="webcam-frame__badge webcam-frame__badge--live">
-                  Live
-                </div>
-                <div className="webcam-frame__badge webcam-frame__badge--fps">
-                  {fps.toFixed(1)} FPS
-                </div>
+                <span className="webcam-frame__badge webcam-frame__badge--live">● Live</span>
+                <span className="webcam-frame__badge webcam-frame__badge--fps">
+                  {data?.fps || 0} FPS
+                </span>
+                {isDetecting && data?.eye && (
+                  <GazeIndicator gazeX={data.eye.gaze_x || 0} gazeY={data.eye.gaze_y || 0} />
+                )}
               </>
-            ) : null}
+            )}
           </div>
 
+          {/* Metrics Grid */}
           <div className="metrics-grid">
             <MetricCard
-              title="Eye Status"
+              title="Eye Strain"
               icon={<Eye size={14} />}
-              value={eyeData.blink_rate ?? 0}
-              unit="/min"
-              detail={`EAR ${(eyeData.ear ?? 0).toFixed(3)}`}
-              accent="#0f766e"
-              status={metricStatus({ alert: eyeData.alert })}
+              value={isDetecting ? data.eye?.blink_rate ?? "--" : "--"}
+              unit="blinks/min"
+              detail={`EAR: ${isDetecting ? (data.eye?.ear ?? 0).toFixed(2) : "--"}`}
+              accent="var(--accent-teal)"
+              status={data?.eye?.alert ? "alert" : "good"}
+              trend={computeTrend(history, "blinkRate")}
             />
-
             <MetricCard
               title="Posture"
               icon={<Activity size={14} />}
-              value={postureData.status ?? "N/A"}
-              detail={`Deviation ${(postureData.deviation ?? 0).toFixed(0)} px`}
-              accent="#0369a1"
-              status={metricStatus({
-                alert: postureData.alert,
-                warning: postureData.status === "WARNING",
-              })}
+              value={isDetecting ? Math.round(data.posture?.deviation ?? 0) : "--"}
+              unit="px"
+              detail={`Status: ${data?.posture?.status || "—"}`}
+              accent="var(--accent-blue)"
+              status={data?.posture?.alert ? "alert" : data?.posture?.status === "WARNING" ? "warning" : "good"}
+              trend={computeTrend(history, "posture")}
             />
-
             <MetricCard
               title="Distance"
               icon={<Ruler size={14} />}
-              value={(distanceData.distance_cm ?? 0).toFixed(0)}
+              value={isDetecting ? Math.round(data.distance?.distance_cm ?? 0) : "--"}
               unit="cm"
-              detail={
-                distanceData.alert
-                  ? "Below safety threshold"
-                  : "Within target range"
-              }
-              accent="#c2410c"
-              status={metricStatus({ alert: distanceData.alert })}
+              detail={data?.distance?.alert ? "Too close!" : "Within range"}
+              accent="var(--accent-amber)"
+              status={data?.distance?.alert ? "alert" : "good"}
+              trend={computeTrend(history, "distance")}
             />
-
             <MetricCard
               title="Fatigue"
-              icon={<Brain size={14} />}
-              value={(fatigueData.fatigue_score ?? 0).toFixed(0)}
+              icon={<Gauge size={14} />}
+              value={isDetecting ? Math.round(data.fatigue?.fatigue_score ?? 0) : "--"}
               unit="/100"
-              detail={`Yawns ${fatigueData.yawn_count ?? 0} per hour`}
-              accent="#b91c1c"
-              status={metricStatus({
-                alert: fatigueData.alert,
-                warning: (fatigueData.fatigue_score ?? 0) > 35,
-              })}
+              detail={`Trend: ${data?.fatigue?.fatigue_trend || "—"}`}
+              accent="var(--accent-red)"
+              status={data?.fatigue?.alert ? "alert" : data?.fatigue?.fatigue_score > 50 ? "warning" : "good"}
+              trend={computeTrend(history, "fatigue")}
+            />
+            <MetricCard
+              title="Head Tilt"
+              icon={<Brain size={14} />}
+              value={isDetecting ? Math.round(Math.abs(data.head_tilt?.angle ?? 0)) : "--"}
+              unit="°"
+              detail={`Dir: ${data?.head_tilt?.direction || "—"}`}
+              accent="var(--accent-purple)"
+              status={data?.head_tilt?.alert ? "alert" : "good"}
+              trend={computeTrend(history, "headTilt")}
             />
           </div>
 
-          {history.length > 5 ? (
-            <article
-              className="metric-card metric-card--wide"
-              style={{ "--card-accent": "#0f766e" }}
-            >
-              <div className="metric-card__label">Blink Rate Trend</div>
-              <SparklineChart
-                data={recentSamples}
-                dataKey="blinkRate"
-                color="#0f766e"
-                gradientId="blinkTrend"
-              />
-            </article>
-          ) : null}
+          {/* Sparklines */}
+          {sparkData.length > 5 && (
+            <div className="metrics-grid">
+              <div className="metric-card metric-card--compact">
+                <div className="metric-card__label">Blink Rate</div>
+                <SparklineChart data={sparkData} dataKey="blinkRate" color="#0f766e" gradientId="sparkBlink" height={60} />
+              </div>
+              <div className="metric-card metric-card--compact">
+                <div className="metric-card__label">Posture</div>
+                <SparklineChart data={sparkData} dataKey="posture" color="#0369a1" gradientId="sparkPosture" height={60} />
+              </div>
+              <div className="metric-card metric-card--compact">
+                <div className="metric-card__label">Distance</div>
+                <SparklineChart data={sparkData} dataKey="distance" color="#c2410c" gradientId="sparkDistance" height={60} />
+              </div>
+              <div className="metric-card metric-card--compact">
+                <div className="metric-card__label">Fatigue</div>
+                <SparklineChart data={sparkData} dataKey="fatigue" color="#b91c1c" gradientId="sparkFatigue" height={60} yDomain={[0, 100]} />
+              </div>
+              <div className="metric-card metric-card--compact">
+                <div className="metric-card__label">Head Tilt</div>
+                <SparklineChart data={sparkData} dataKey="headTilt" color="#7c3aed" gradientId="sparkTilt" height={60} />
+              </div>
+            </div>
+          )}
         </section>
 
+        {/* ── Side Panel ────────────────────── */}
         <aside className="side-panel">
-          <section className="session-info">
-            <h2 className="session-info__title">Current Session</h2>
+          <div className="session-info">
+            <div className="session-info__title"><Clock size={13} /> Session</div>
             <div className="session-info__row">
-              <span className="session-info__label">Duration</span>
-              <span className="session-info__value">{sessionTime}</span>
+              <span className="session-info__label">Elapsed</span>
+              <span className="session-info__value">{formatDuration(sessionStart)}</span>
             </div>
             <div className="session-info__row">
-              <span className="session-info__label">Face visibility</span>
-              <span className="session-info__value">
-                {faceDetected ? "Detected" : "Not detected"}
-              </span>
+              <span className="session-info__label">Alerts</span>
+              <span className="session-info__value">{alerts.length}</span>
             </div>
             <div className="session-info__row">
-              <span className="session-info__label">Runtime FPS</span>
-              <span className="session-info__value">{fps.toFixed(1)}</span>
+              <span className="session-info__label">Breaks</span>
+              <span className="session-info__value">{breakStatus.breaks_taken || 0}</span>
             </div>
             <div className="session-info__row">
-              <span className="session-info__label">Voice alerts</span>
-              <span className="session-info__value">
-                {voiceEnabled ? "Enabled" : "Muted"}
-              </span>
+              <span className="session-info__label">Compliance</span>
+              <span className="session-info__value">{breakStatus.compliance || 100}%</span>
             </div>
-            <button
-              className="btn btn--ghost btn--sm session-info__action"
-              onClick={handleRecalibrate}
-            >
-              <RefreshCw size={14} /> Recalibrate
-            </button>
-          </section>
+            <div className="session-info__row">
+              <span className="session-info__label">Wellness</span>
+              <span className="session-info__value">{score}/100</span>
+            </div>
+          </div>
 
-          {history.length > 5 ? (
-            <>
-              <article
-                className="metric-card metric-card--compact"
-                style={{ "--card-accent": "#c2410c" }}
-              >
-                <div className="metric-card__label">Distance Trend</div>
-                <SparklineChart
-                  data={recentSamples}
-                  dataKey="distance"
-                  color="#c2410c"
-                  gradientId="distanceTrend"
-                  height={76}
-                />
-              </article>
-              <article
-                className="metric-card metric-card--compact"
-                style={{ "--card-accent": "#b91c1c" }}
-              >
-                <div className="metric-card__label">Fatigue Trend</div>
-                <SparklineChart
-                  data={recentSamples}
-                  dataKey="fatigue"
-                  color="#b91c1c"
-                  gradientId="fatigueTrend"
-                  height={76}
-                  yDomain={[0, 100]}
-                />
-              </article>
-            </>
-          ) : null}
-
-          <section className="alert-feed">
-            <h2 className="alert-feed__title">
-              <AlertTriangle size={14} /> Alert Timeline
-            </h2>
-
-            {alerts.length === 0 ? (
+          <div className="alert-feed">
+            <div className="alert-feed__title"><Bell size={13} /> Alerts</div>
+            <div className="alert-feed__filters">
+              {[
+                { id: "all", label: "All", count: alerts.length },
+                { id: "eye", label: "Eye", count: alertCounts.eye || 0 },
+                { id: "posture", label: "Posture", count: alertCounts.posture || 0 },
+                { id: "distance", label: "Distance", count: alertCounts.distance || 0 },
+                { id: "fatigue", label: "Fatigue", count: alertCounts.fatigue || 0 },
+                { id: "tilt", label: "Tilt", count: alertCounts.tilt || 0 },
+                { id: "break", label: "Break", count: alertCounts.break || 0 },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  className={`chip ${alertFilter === f.id ? "chip--active" : ""}`}
+                  onClick={() => setAlertFilter(f.id)}
+                >
+                  {f.label} <span>{f.count}</span>
+                </button>
+              ))}
+            </div>
+            {filteredAlerts.length === 0 ? (
               <div className="alert-feed__empty">
-                No alerts triggered in this session.
+                {alerts.length === 0
+                  ? "No alerts yet. Monitoring your wellness."
+                  : "No alerts match this filter."}
               </div>
             ) : (
-              alerts.slice(0, 20).map((alert) => (
-                <article key={alert.id} className="alert-feed__item">
-                  <span
-                    className={`alert-feed__dot alert-feed__dot--${alert.color}`}
-                  />
+              filteredAlerts.slice(0, 20).map((a) => (
+                <div key={a.id} className="alert-feed__item">
+                  <div className={`alert-feed__dot alert-feed__dot--${a.color}`} />
                   <div>
                     <div className="alert-feed__text">
-                      {alert.label}: {alert.message}
+                      <strong>{a.label}</strong> — {a.message}
                     </div>
-                    <div className="alert-feed__time">{alert.time}</div>
+                    <div className="alert-feed__time">{a.time}</div>
                   </div>
-                </article>
+                </div>
               ))
             )}
-          </section>
+          </div>
         </aside>
       </main>
 
+      {/* ── Break Reminder ──────────────────── */}
+      <BreakReminder
+        visible={showBreakReminder}
+        onDismiss={handleDismissBreak}
+        onAcknowledge={handleAcknowledgeBreak}
+      />
+
+      {/* ── Settings Drawer ─────────────────── */}
       <SettingsDrawer
         open={showSettings}
         onClose={() => setShowSettings(false)}
@@ -400,11 +487,28 @@ export default function App() {
         onSave={handleSaveSettings}
       />
 
-      <AnalyticsModal
-        open={showAnalytics}
-        onClose={() => setShowAnalytics(false)}
-        history={history}
-      />
+      {/* ── Analytics Modal ─────────────────── */}
+      {showAnalytics ? (
+        <Suspense
+          fallback={
+            <div className="analytics-overlay" onClick={() => setShowAnalytics(false)}>
+              <div className="analytics-panel" onClick={(e) => e.stopPropagation()}>
+                <div className="analytics-panel__header">
+                  <h2 className="analytics-panel__title">Session Analytics</h2>
+                  <button className="btn btn--ghost btn--icon" onClick={() => setShowAnalytics(false)}>Close</button>
+                </div>
+                <div className="alert-feed__empty analytics-panel__empty">Loading analytics...</div>
+              </div>
+            </div>
+          }
+        >
+          <AnalyticsModal
+            open={showAnalytics}
+            onClose={() => setShowAnalytics(false)}
+            history={history}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

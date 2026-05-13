@@ -104,6 +104,26 @@ export default function SettingsDrawer({
         </div>
 
         <div className="settings-group">
+          <div className="settings-group__title">Head Tilt</div>
+          <div className="settings-row">
+            <span className="settings-row__label">Tilt threshold (°)</span>
+            <input
+              className="settings-row__input"
+              type="number"
+              min="5"
+              max="30"
+              value={settings.head_tilt_threshold || 15}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  head_tilt_threshold: parseInt(event.target.value, 10) || 15,
+                }))
+              }
+            />
+          </div>
+        </div>
+
+        <div className="settings-group">
           <div className="settings-group__title">Alerting</div>
           <div className="settings-row">
             <span className="settings-row__label">Voice alerts</span>

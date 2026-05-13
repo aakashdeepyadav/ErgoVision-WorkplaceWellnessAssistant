@@ -1,5 +1,5 @@
 """
-ErgoVision — Thread-Safe Session State
+ErgoVision — Thread-Safe Session State (Enhanced)
 Shared state object that all detectors write to and the alert engine reads from.
 """
 
@@ -22,6 +22,11 @@ class SessionState:
             "eyes_closed": 0.0,
             "eye_alert": False,
             "eye_reason": "",
+            # Gaze tracking
+            "gaze_x": 0.0,
+            "gaze_y": 0.0,
+            "stare_duration": 0.0,
+            "stare_alert": False,
             # Posture
             "posture_offset": 0.0,
             "posture_baseline": 0.0,
@@ -30,6 +35,8 @@ class SessionState:
             "posture_alert": False,
             "posture_reason": "",
             "posture_calibrated": False,
+            "shoulder_asymmetry": 0.0,
+            "posture_issues": [],
             # Distance
             "distance_cm": 0.0,
             "iris_px": 0.0,
@@ -40,8 +47,28 @@ class SessionState:
             "mar": 0.0,
             "yawn_count": 0,
             "fatigue_score": 0.0,
+            "fatigue_trend": "stable",
             "fatigue_alert": False,
             "fatigue_reason": "",
+            # Head tilt
+            "head_tilt_angle": 0.0,
+            "head_tilt_direction": "center",
+            "head_tilt_duration": 0.0,
+            "head_tilt_alert": False,
+            "head_tilt_reason": "",
+            # Break management
+            "time_since_break": 0.0,
+            "break_due": False,
+            "break_overdue": False,
+            "on_break": False,
+            "breaks_taken": 0,
+            "break_compliance": 100.0,
+            # Productivity
+            "healthy_time": 0.0,
+            "degraded_time": 0.0,
+            "absent_time": 0.0,
+            "session_score": 0.0,
+            "productivity_state": "absent",
             # System
             "fps": 0.0,
             "face_detected": False,

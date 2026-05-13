@@ -1,9 +1,11 @@
 """
-ErgoVision runtime orchestration.
+ErgoVision runtime orchestration (Enhanced).
 
 This module owns the long-running monitoring state (camera, detectors,
 calibration/session lifecycle) so the FastAPI layer can stay focused on
 transport concerns.
+
+Enhanced with head tilt detector, break manager, and productivity tracker.
 """
 
 from __future__ import annotations
@@ -19,13 +21,16 @@ import cv2
 from fastapi import WebSocket
 
 from .alert_engine import AlertEngine
+from .break_manager import BreakManager
 from .calibration import CalibrationManager
 from .camera import CameraManager
 from .database import DatabaseManager
 from .detectors.distance import DistanceDetector
 from .detectors.eye_fatigue import EyeFatigueDetector
 from .detectors.fatigue_score import FatigueScoreDetector
+from .detectors.head_tilt import HeadTiltDetector
 from .detectors.posture import PostureDetector
+from .productivity_tracker import ProductivityTracker
 from .session_state import SessionState
 from .voice_alert import VoiceAlert
 
@@ -42,9 +47,12 @@ class ErgoVisionRuntime:
         self.posture_detector = PostureDetector()
         self.distance_detector = DistanceDetector()
         self.fatigue_detector = FatigueScoreDetector()
+        self.head_tilt_detector = HeadTiltDetector()
         self.session_state = SessionState()
         self.db = DatabaseManager()
         self.voice = VoiceAlert()
+        self.break_manager = BreakManager()
+        self.productivity = ProductivityTracker()
         self.calibration = CalibrationManager(self.posture_detector, self.distance_detector)
         self.alert_engine = AlertEngine(self.session_state, self.voice, self.db)
 
@@ -87,6 +95,8 @@ class ErgoVisionRuntime:
             if self.current_session_id is None:
                 logger.warning("Monitoring started without persisted session id.")
             self.alert_engine.set_session_id(self.current_session_id)
+            self.break_manager.reset_session()
+            self.productivity.reset_session()
             self.snapshot_timer = time.time()
 
     def stop_pipeline_if_idle(self) -> int | None:
@@ -103,6 +113,8 @@ class ErgoVisionRuntime:
                 closed = self.db.end_session(ended_session_id)
                 if not closed:
                     logger.warning("Failed to close session '%s' in database.", ended_session_id)
+                # Update daily summary on session end
+                self.db.update_daily_summary()
 
             self.current_session_id = None
             return ended_session_id
@@ -148,14 +160,18 @@ class ErgoVisionRuntime:
                     "fps": round(fps, 1),
                 }
 
+            # ── Detection pipeline ──────────────────────────
+
             if face_detected:
                 self.eye_detector.update(face_landmarks, frame_w, frame_h)
                 self.distance_detector.update(face_landmarks, frame_w, frame_h)
+                self.head_tilt_detector.update(face_landmarks, frame_w, frame_h)
                 self.fatigue_detector.update(
                     face_landmarks,
                     frame_w,
                     frame_h,
                     self.eye_detector.blink_count_per_min,
+                    head_tilt_angle=self.head_tilt_detector.current_angle,
                 )
 
             if pose_detected:
@@ -165,6 +181,28 @@ class ErgoVisionRuntime:
             posture_status = self.posture_detector.get_status()
             distance_status = self.distance_detector.get_status()
             fatigue_status = self.fatigue_detector.get_status()
+            head_tilt_status = self.head_tilt_detector.get_status()
+
+            # ── Break manager & productivity ────────────────
+
+            any_alert = (
+                eye_status["alert"]
+                or posture_status["alert"]
+                or distance_status["alert"]
+                or fatigue_status["alert"]
+                or head_tilt_status["alert"]
+            )
+
+            self.break_manager.update(
+                face_detected,
+                fatigue_score=fatigue_status["fatigue_score"],
+            )
+            self.productivity.update(face_detected, any_alert)
+
+            break_status = self.break_manager.get_status()
+            prod_status = self.productivity.get_status()
+
+            # ── Update shared state ─────────────────────────
 
             self.session_state.update(
                 ear=eye_status["ear"],
@@ -172,6 +210,10 @@ class ErgoVisionRuntime:
                 eyes_closed=eye_status["eyes_closed"],
                 eye_alert=eye_status["alert"],
                 eye_reason=eye_status["reason"],
+                gaze_x=eye_status.get("gaze_x", 0),
+                gaze_y=eye_status.get("gaze_y", 0),
+                stare_duration=eye_status.get("stare_duration", 0),
+                stare_alert=eye_status.get("stare_alert", False),
                 posture_offset=posture_status["offset"],
                 posture_baseline=posture_status["baseline"],
                 posture_deviation=posture_status["deviation"],
@@ -179,6 +221,8 @@ class ErgoVisionRuntime:
                 posture_alert=posture_status["alert"],
                 posture_reason=posture_status["reason"],
                 posture_calibrated=posture_status["calibrated"],
+                shoulder_asymmetry=posture_status.get("shoulder_asymmetry", 0),
+                posture_issues=posture_status.get("issues", []),
                 distance_cm=distance_status["distance_cm"],
                 iris_px=distance_status["iris_px"],
                 distance_alert=distance_status["alert"],
@@ -187,8 +231,25 @@ class ErgoVisionRuntime:
                 mar=fatigue_status["mar"],
                 yawn_count=fatigue_status["yawn_count"],
                 fatigue_score=fatigue_status["fatigue_score"],
+                fatigue_trend=fatigue_status.get("fatigue_trend", "stable"),
                 fatigue_alert=fatigue_status["alert"],
                 fatigue_reason=fatigue_status["reason"],
+                head_tilt_angle=head_tilt_status["angle"],
+                head_tilt_direction=head_tilt_status["direction"],
+                head_tilt_duration=head_tilt_status["duration"],
+                head_tilt_alert=head_tilt_status["alert"],
+                head_tilt_reason=head_tilt_status["reason"],
+                time_since_break=break_status["time_since_break"],
+                break_due=break_status["break_due"],
+                break_overdue=break_status["break_overdue"],
+                on_break=break_status["on_break"],
+                breaks_taken=break_status["breaks_taken"],
+                break_compliance=break_status["compliance"],
+                healthy_time=prod_status["healthy_time"],
+                degraded_time=prod_status["degraded_time"],
+                absent_time=prod_status["absent_time"],
+                session_score=prod_status["session_score"],
+                productivity_state=prod_status["current_state"],
                 fps=fps,
                 face_detected=face_detected,
                 pose_detected=pose_detected,
@@ -197,6 +258,8 @@ class ErgoVisionRuntime:
             )
 
             fired = self.alert_engine.check()
+
+            # ── Periodic snapshot logging ───────────────────
 
             now = time.time()
             if self.current_session_id and (now - self.snapshot_timer) >= 30:
@@ -208,6 +271,9 @@ class ErgoVisionRuntime:
                     posture_status["deviation"],
                     distance_status["distance_cm"],
                     fatigue_status["fatigue_score"],
+                    head_tilt=head_tilt_status["angle"],
+                    gaze_x=eye_status.get("gaze_x", 0),
+                    gaze_y=eye_status.get("gaze_y", 0),
                 )
                 if not logged:
                     logger.warning(
@@ -221,6 +287,9 @@ class ErgoVisionRuntime:
                 "posture": posture_status,
                 "distance": distance_status,
                 "fatigue": fatigue_status,
+                "head_tilt": head_tilt_status,
+                "break_status": break_status,
+                "productivity": prod_status,
                 "fps": round(fps, 1),
                 "face_detected": face_detected,
                 "pose_detected": pose_detected,
@@ -243,6 +312,8 @@ class ErgoVisionRuntime:
             self.voice.enabled = bool(settings["voice_enabled"])
         if "cooldown_minutes" in settings:
             self.alert_engine.cooldown_seconds = int(settings["cooldown_minutes"]) * 60
+        if "head_tilt_threshold" in settings:
+            self.head_tilt_detector.tilt_threshold_deg = float(settings["head_tilt_threshold"])
 
     async def handle_client_message(self, raw_message: str) -> None:
         """Handle a command message from the React dashboard."""
@@ -268,6 +339,10 @@ class ErgoVisionRuntime:
 
         if command == "toggle_voice":
             self.voice.toggle()
+            return
+
+        if command == "acknowledge_break":
+            self.break_manager.acknowledge_break()
             return
 
         if command == "update_settings":

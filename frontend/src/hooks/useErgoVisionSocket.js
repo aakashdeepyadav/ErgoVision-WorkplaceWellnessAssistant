@@ -14,10 +14,14 @@ function buildHistoryEntry(sample) {
     posture: sample.posture?.deviation ?? 0,
     distance: sample.distance?.distance_cm ?? 0,
     fatigue: sample.fatigue?.fatigue_score ?? 0,
+    headTilt: sample.head_tilt?.angle ?? 0,
+    gazeX: sample.eye?.gaze_x ?? 0,
+    gazeY: sample.eye?.gaze_y ?? 0,
   }
 }
 
-export function useErgoVisionSocket(wsUrl) {
+export function useErgoVisionSocket(wsUrl, options = {}) {
+  const { autoConnect = true } = options
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState(null)
@@ -27,6 +31,7 @@ export function useErgoVisionSocket(wsUrl) {
   const [toasts, setToasts] = useState([])
   const [history, setHistory] = useState([])
   const [sessionStart, setSessionStart] = useState(null)
+  const [breakDue, setBreakDue] = useState(false)
 
   const wsRef = useRef(null)
   const reconnectTimerRef = useRef(null)
@@ -93,6 +98,11 @@ export function useErgoVisionSocket(wsUrl) {
     }
 
     setData(payload.data)
+
+    // Track break status
+    if (payload.data.break_status) {
+      setBreakDue(payload.data.break_status.break_due || false)
+    }
 
     if (payload.data.type !== 'detection') {
       return
@@ -177,7 +187,9 @@ export function useErgoVisionSocket(wsUrl) {
 
   useEffect(() => {
     shouldReconnectRef.current = true
-    connect()
+    if (autoConnect) {
+      connect()
+    }
     const activeToastTimers = toastTimersRef.current
 
     return () => {
@@ -191,7 +203,7 @@ export function useErgoVisionSocket(wsUrl) {
         wsRef.current.close()
       }
     }
-  }, [clearReconnectTimer, connect])
+  }, [autoConnect, clearReconnectTimer, connect])
 
   return {
     connected,
@@ -203,6 +215,7 @@ export function useErgoVisionSocket(wsUrl) {
     toasts,
     history,
     sessionStart,
+    breakDue,
     connect,
     sendCommand,
   }

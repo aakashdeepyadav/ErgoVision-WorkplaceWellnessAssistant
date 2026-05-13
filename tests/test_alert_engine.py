@@ -58,3 +58,73 @@ def test_alert_engine_can_fire_multiple_alert_types():
     assert 'EYE_STRAIN' in fired
     assert 'POOR_POSTURE' in fired
     assert len(database.events) == 2
+
+
+def test_head_tilt_alert_fires():
+    state = SessionState()
+    voice = DummyVoice()
+    database = DummyDatabase()
+    engine = AlertEngine(state, voice, database, session_id=20)
+    engine.cooldown_seconds = 0
+
+    state.update(
+        is_monitoring=True,
+        head_tilt_alert=True,
+        head_tilt_reason='Head tilted right at 18°',
+        head_tilt_angle=18.0,
+    )
+
+    fired = engine.check()
+    assert 'HEAD_TILT' in fired
+    assert len(database.events) == 1
+
+
+def test_prolonged_stare_alert_fires():
+    state = SessionState()
+    voice = DummyVoice()
+    database = DummyDatabase()
+    engine = AlertEngine(state, voice, database, session_id=21)
+    engine.cooldown_seconds = 0
+
+    state.update(
+        is_monitoring=True,
+        stare_alert=True,
+        stare_duration=45.0,
+    )
+
+    fired = engine.check()
+    assert 'PROLONGED_STARE' in fired
+
+
+def test_break_overdue_alert_fires():
+    state = SessionState()
+    voice = DummyVoice()
+    database = DummyDatabase()
+    engine = AlertEngine(state, voice, database, session_id=22)
+    engine.cooldown_seconds = 0
+
+    state.update(
+        is_monitoring=True,
+        break_overdue=True,
+        time_since_break=1800,
+    )
+
+    fired = engine.check()
+    assert 'TAKE_BREAK' in fired
+
+
+def test_no_alerts_when_not_monitoring():
+    state = SessionState()
+    voice = DummyVoice()
+    database = DummyDatabase()
+    engine = AlertEngine(state, voice, database, session_id=30)
+    engine.cooldown_seconds = 0
+
+    state.update(
+        is_monitoring=False,
+        eye_alert=True,
+        head_tilt_alert=True,
+    )
+
+    fired = engine.check()
+    assert fired == []

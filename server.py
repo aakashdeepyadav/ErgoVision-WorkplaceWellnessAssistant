@@ -1,243 +1,240 @@
 """
-ErgoVision — FastAPI WebSocket Server
-Bridges the Python CV pipeline to the React frontend via WebSocket.
-Streams webcam frames + detection data in real-time.
+ErgoVision — FastAPI Server (Enhanced)
+WebSocket video pipeline + REST API for analytics, breaks, and daily summaries.
 """
 
 from __future__ import annotations
 
 import asyncio
-import errno
 import json
 import logging
 import os
+import sys
 
+import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
-import uvicorn
 
 import config
-from src.runtime import ErgoVisionRuntime
+
+# Ensure `src` is importable when running ``python server.py`` from the repository root.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from src.runtime import ErgoVisionRuntime  # noqa: E402
 
 
-logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL.upper(), logging.INFO),
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 logger = logging.getLogger("ergovision.server")
+logging.basicConfig(level=config.LOG_LEVEL, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 
 
-# ─── App Setup ────────────────────────────────────────
-app = FastAPI(title="ErgoVision API", version="1.0.0")
+app = FastAPI(title="ErgoVision", version="2.0.0")
 
+# ── CORS ─────────────────────────────────────────────
+
+allowed_origins = [
+    origin.strip() for origin in config.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config.CORS_ALLOWED_ORIGINS,
-    allow_credentials=config.CORS_ALLOW_CREDENTIALS,
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ─── Runtime State ───────────────────────────────────
+# ── Runtime ──────────────────────────────────────────
+
 runtime = ErgoVisionRuntime()
+runtime.bootstrap_calibration()
 
 
-async def _safe_send_json(websocket: WebSocket, payload: dict) -> bool:
-    """Send payload to client and return False when the socket is no longer writable."""
-    try:
-        await websocket.send_text(json.dumps(payload))
-        return True
-    except WebSocketDisconnect:
-        return False
-    except RuntimeError:
-        logger.info("WebSocket closed while sending payload.")
-        return False
-    except Exception:
-        logger.exception("Unexpected error while sending WebSocket payload.")
-        return False
+# ── REST endpoints ───────────────────────────────────
 
-
-def _format_local_urls() -> tuple[str, str, str]:
-    """Build readable backend/frontend/ws URLs for startup logs."""
-    display_host = "localhost" if config.API_HOST in {"0.0.0.0", "::"} else config.API_HOST
-    backend_url = f"http://{display_host}:{config.API_PORT}"
-    frontend_url = os.getenv(
-        "ERGOVISION_FRONTEND_URL",
-        f"http://localhost:{config.FRONTEND_DEV_PORT}",
-    )
-    ws_scheme = "wss" if backend_url.startswith("https://") else "ws"
-    ws_url = f"{ws_scheme}://{display_host}:{config.API_PORT}/ws"
-    return backend_url, frontend_url, ws_url
-
-
-# ─── WebSocket Endpoint ───────────────────────────────
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    runtime.add_client(websocket)
-    logger.info("WebSocket client connected. clients=%s", runtime.client_count())
-
-    try:
-        runtime.ensure_pipeline_started()
-        logger.info("Camera pipeline started. session_id=%s", runtime.current_session_id)
-    except Exception as exc:
-        logger.exception("Failed to start runtime pipeline.")
-        await _safe_send_json(
-            websocket,
-            {
-                "type": "error",
-                "message": f"Cannot start monitoring pipeline: {exc}",
-            },
-        )
-        await websocket.close(code=1011)
-        runtime.remove_client(websocket)
-        runtime.stop_pipeline_if_idle()
-        return
-
-    try:
-        while True:
-            try:
-                msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.01)
-                await runtime.handle_client_message(msg)
-            except asyncio.TimeoutError:
-                pass
-
-            frame_b64, data = await asyncio.get_running_loop().run_in_executor(
-                None,
-                runtime.process_frame,
-            )
-
-            if frame_b64 is not None:
-                delivered = await _safe_send_json(
-                    websocket,
-                    {
-                        "frame": frame_b64,
-                        "data": data,
-                    },
-                )
-                if not delivered:
-                    break
-
-            await asyncio.sleep(0.05)
-
-    except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected.")
-    except Exception:
-        logger.exception("Unhandled WebSocket loop error.")
-    finally:
-        runtime.remove_client(websocket)
-        ended_session_id = runtime.stop_pipeline_if_idle()
-        if ended_session_id:
-            logger.info("Camera pipeline stopped. session_id=%s saved.", ended_session_id)
-
-
-# ─── REST Endpoints ───────────────────────────────────
 @app.get("/api/status")
-async def get_status():
-    """Get current system status."""
-    return JSONResponse(content=runtime.session_state.get_all())
+async def api_status():
+    """Return current session state snapshot for debugging or external polling."""
+    return runtime.session_state.get_all()
 
 
 @app.get("/api/health")
-async def get_health():
-    """Lightweight health endpoint for readiness checks."""
-    return JSONResponse(
-        content={
-            "status": "ok",
-            "clients": runtime.client_count(),
-            "pipeline_running": runtime.is_running,
-        }
-    )
+async def api_health():
+    """Readiness probe: reports whether the pipeline is active and current session info."""
+    return {
+        "status": "ok",
+        "running": runtime.is_running,
+        "session_id": runtime.current_session_id,
+        "client_count": runtime.client_count(),
+    }
 
 
 @app.get("/api/sessions")
-async def get_sessions():
-    """Get recent session history."""
-    sessions = runtime.db.get_recent_sessions(20)
-    return JSONResponse(content=[dict(s) for s in sessions])
+async def api_sessions():
+    """Return the most recent monitoring sessions."""
+    rows = runtime.db.get_recent_sessions(limit=20)
+    return [dict(r) for r in rows]
 
 
 @app.get("/api/sessions/{session_id}/events")
-async def get_session_events(session_id: int):
-    """Get events for a specific session."""
-    events = runtime.db.get_session_events(session_id)
-    return JSONResponse(content=[dict(e) for e in events])
+async def api_session_events(session_id: int):
+    """Return alert events for a given session."""
+    rows = runtime.db.get_session_events(session_id)
+    return [dict(r) for r in rows]
 
 
 @app.get("/api/sessions/{session_id}/snapshots")
-async def get_session_snapshots(session_id: int):
-    """Get snapshots for a specific session."""
-    snapshots = runtime.db.get_session_snapshots(session_id)
-    return JSONResponse(content=[dict(s) for s in snapshots])
+async def api_session_snapshots(session_id: int):
+    """Return periodic health snapshots for a given session."""
+    rows = runtime.db.get_session_snapshots(session_id)
+    return [dict(r) for r in rows]
 
 
 @app.get("/api/analytics")
-async def get_analytics():
-    """Get analytics data for the last N days."""
-    snapshots = runtime.db.get_all_snapshots_last_n_days(7)
+async def api_analytics():
+    """Return recent snapshots and event counts for dashboard analytics."""
+    snapshots = runtime.db.get_all_snapshots_last_n_days(days=7)
     event_counts = runtime.db.get_event_counts_by_type()
-    return JSONResponse(content={
-        "snapshots": [dict(s) for s in snapshots],
-        "event_counts": [{"type": e[0], "count": e[1]} for e in event_counts],
-    })
+    return {
+        "snapshots": [dict(r) for r in snapshots],
+        "event_counts": event_counts,
+    }
 
 
 @app.get("/api/calibration")
-async def get_calibration_status():
-    """Get calibration status."""
-    return JSONResponse(content={
+async def api_calibration():
+    """Return current calibration state."""
+    return {
         "phase": runtime.calibration.phase,
-        "progress": runtime.calibration.progress,
+        "is_complete": runtime.calibration.is_complete(),
         "posture_calibrated": runtime.posture_detector.is_calibrated,
         "distance_calibrated": runtime.distance_detector.is_calibrated,
-        "needs_calibration": runtime.calibration.needs_calibration(),
-    })
+    }
 
 
-# ─── Serve React Build (Production) ──────────────────
-frontend_build = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-if os.path.exists(frontend_build):
-    app.mount("/", StaticFiles(directory=frontend_build, html=True), name="frontend")
-else:
-    logger.info(
-        "Frontend build not found at '%s'. Run 'cd frontend && npm run build' to serve static files.",
-        frontend_build,
-    )
+@app.get("/api/daily-summary")
+async def api_daily_summary(date: str | None = None):
+    """Return daily aggregated health report for a specific date (default: today)."""
+    runtime.db.update_daily_summary(date)
+    summary = runtime.db.get_daily_summary(date)
+    return summary or {"message": "No data available for this date."}
 
 
-# ─── Entry Point ──────────────────────────────────────
-if __name__ == "__main__":
-    os.makedirs(config.DATA_DIR, exist_ok=True)
+@app.get("/api/weekly-report")
+async def api_weekly_report(days: int = 7):
+    """Return daily summaries for the last N days."""
+    rows = runtime.db.get_weekly_summaries(days=days)
+    return [dict(r) for r in rows]
 
-    # Try to load existing calibration
-    if runtime.bootstrap_calibration():
-        logger.info("Loaded saved calibration data.")
-    else:
-        logger.info("No saved calibration data. Calibration will run on first connect.")
 
-    backend_url, frontend_url, ws_url = _format_local_urls()
-    logger.info("+------------------------------------------+")
-    logger.info("|        ErgoVision Server Started        |")
-    logger.info("|   Backend:  %-28s|", backend_url)
-    logger.info("|   Frontend: %-28s|", frontend_url)
-    logger.info("|   WebSocket: %-27s|", ws_url)
-    logger.info("+------------------------------------------+")
+@app.get("/api/break-stats")
+async def api_break_stats():
+    """Return break compliance statistics."""
+    session_stats = runtime.break_manager.get_status()
+    db_stats = runtime.db.get_break_stats(runtime.current_session_id)
+    return {
+        "current_session": session_stats,
+        "database": db_stats,
+    }
+
+
+@app.post("/api/recalibrate")
+async def api_recalibrate():
+    """Trigger recalibration via REST."""
+    runtime.calibration.start_posture_calibration()
+    return {"status": "calibration_started", "phase": runtime.calibration.phase}
+
+
+# ── WebSocket ────────────────────────────────────────
+
+@app.websocket("/ws")
+async def websocket_monitor(websocket: WebSocket):
+    """
+    Main monitoring endpoint.
+
+    Each connected client receives a stream of frames (base64 JPEG) with
+    detection data.  The very first client triggers camera + session start;
+    the last disconnect stops it.
+    """
+    await websocket.accept()
 
     try:
-        uvicorn.run(
-            app,
-            host=config.API_HOST,
-            port=config.API_PORT,
-            log_level=config.LOG_LEVEL,
+        runtime.ensure_pipeline_started()
+    except Exception as exc:
+        logger.exception("Pipeline failed to start during WebSocket connect.")
+        await websocket.send_json({"type": "error", "message": str(exc)})
+        await websocket.close()
+        return
+
+    runtime.add_client(websocket)
+    logger.info("Client connected (total: %d).", runtime.client_count())
+
+    receive_task = asyncio.create_task(_receive_client_commands(websocket))
+    stream_task = asyncio.create_task(_stream_frames(websocket))
+
+    try:
+        done, pending = await asyncio.wait(
+            {receive_task, stream_task}, return_when=asyncio.FIRST_COMPLETED
         )
-    except OSError as exc:
-        if exc.errno in {errno.EADDRINUSE, 10048}:
-            logger.error(
-                "Port %s is already in use. Set ERGOVISION_API_PORT to another port.",
-                config.API_PORT,
-            )
-        else:
-            logger.exception("Failed to start server due to OS error.")
-        raise
+        for task in pending:
+            task.cancel()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        receive_task.cancel()
+        stream_task.cancel()
+        runtime.remove_client(websocket)
+        ended_id = runtime.stop_pipeline_if_idle()
+        if ended_id:
+            logger.info("Session %s ended (last client disconnected).", ended_id)
+
+
+async def _receive_client_commands(websocket: WebSocket) -> None:
+    """Forward incoming client messages to the runtime command handler."""
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            await runtime.handle_client_message(raw)
+    except WebSocketDisconnect:
+        return
+
+
+async def _stream_frames(websocket: WebSocket) -> None:
+    """Continuously process frames and push results to the client."""
+    target_delay = 1.0 / config.TARGET_FPS
+
+    while True:
+        t_start = asyncio.get_event_loop().time()
+
+        try:
+            frame_b64, data = await asyncio.to_thread(runtime.process_frame)
+        except Exception:
+            logger.exception("Frame processing error.")
+            await asyncio.sleep(target_delay)
+            continue
+
+        if frame_b64 is None:
+            await asyncio.sleep(target_delay)
+            continue
+
+        payload = json.dumps({"frame": frame_b64, "data": data})
+
+        try:
+            await websocket.send_text(payload)
+        except WebSocketDisconnect:
+            return
+        except Exception:
+            return
+
+        elapsed = asyncio.get_event_loop().time() - t_start
+        sleep_time = max(0.005, target_delay - elapsed)
+        await asyncio.sleep(sleep_time)
+
+
+# ── Entry point ──────────────────────────────────────
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "server:app",
+        host=config.API_HOST,
+        port=config.API_PORT,
+        log_level=config.LOG_LEVEL.lower(),
+        reload=False,
+    )

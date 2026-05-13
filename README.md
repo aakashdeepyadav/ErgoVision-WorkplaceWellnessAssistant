@@ -208,6 +208,18 @@ npm run build
 - Raw frames are streamed to local dashboard only; not persisted.
 - SQLite stores derived numeric metrics and alert metadata.
 
+## Camera Permissions
+
+ErgoVision opens the webcam from the Python backend (OpenCV) and streams frames to the dashboard over WebSocket.
+
+The dashboard also requests browser camera permission when you click Connect (so you see a standard browser permission prompt). This is an explicit consent step; the monitoring pipeline still runs in the local Python backend.
+
+On Windows, backend camera access is controlled by OS privacy settings:
+
+- Settings → Privacy & security → Camera
+- Turn on **Camera access**
+- Turn on **Let desktop apps access your camera**
+
 ## Troubleshooting
 
 - Camera unavailable: verify camera permissions and ensure no other app is locking the webcam.
