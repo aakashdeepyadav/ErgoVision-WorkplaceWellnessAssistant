@@ -139,7 +139,7 @@ TARGET_FPS = _env_int("ERGOVISION_TARGET_FPS", 30)
 # ──────────────────────────────────────────────
 API_HOST = _env_str("ERGOVISION_API_HOST", "0.0.0.0")
 API_PORT = _env_int("ERGOVISION_API_PORT", 8000)
-LOG_LEVEL = _env_str("ERGOVISION_LOG_LEVEL", "info").lower()
+LOG_LEVEL = _env_str("ERGOVISION_LOG_LEVEL", "INFO").upper()
 FRONTEND_DEV_PORT = _env_int("ERGOVISION_FRONTEND_DEV_PORT", 5174)
 
 _default_frontend_origin = _env_str(
