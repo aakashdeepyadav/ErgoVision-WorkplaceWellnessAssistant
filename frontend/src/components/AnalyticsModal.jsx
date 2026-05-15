@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, FileText } from "lucide-react";
 import {
   Area,
   AreaChart,
@@ -148,6 +148,19 @@ function downloadCsv(historyRows) {
   URL.revokeObjectURL(objectUrl);
 }
 
+function downloadPdf() {
+  const link = document.createElement("a");
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  
+  // Use absolute URL since backend might be on a different port than the dev server
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+  link.href = `${backendUrl}/api/weekly-report/pdf`;
+  link.download = `ergovision-weekly-report-${timestamp}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
 function AnalyticsChartCard({
   title,
   data,
@@ -255,14 +268,23 @@ export default function AnalyticsModal({ open, onClose, history }) {
             ))}
           </div>
 
-          <button
-            type="button"
-            className="btn btn--ghost btn--sm"
-            onClick={() => downloadCsv(visibleHistory)}
-            disabled={visibleHistory.length === 0}
-          >
-            <Download size={14} /> Export CSV
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => downloadCsv(visibleHistory)}
+              disabled={visibleHistory.length === 0}
+            >
+              <Download size={14} /> Export CSV
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary btn--sm"
+              onClick={() => downloadPdf()}
+            >
+              <FileText size={14} /> Export PDF Report
+            </button>
+          </div>
         </div>
         <div className="analytics-panel__meta">
           {visibleHistory.length} samples in view

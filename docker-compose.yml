@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ERGOVISION_API_HOST=0.0.0.0
+      - ERGOVISION_API_PORT=8000
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    # Note: Accessing webcam from inside Docker on Windows/Mac requires 
+    # special configuration or USB passthrough, which might not work seamlessly out of the box.
+    # For local desktop use, native python execution is recommended.
+    # devices:
+    #   - /dev/video0:/dev/video0

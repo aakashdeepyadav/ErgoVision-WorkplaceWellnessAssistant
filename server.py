@@ -10,9 +10,12 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime
 
+import structlog
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 import config
@@ -21,13 +24,36 @@ import config
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.runtime import ErgoVisionRuntime  # noqa: E402
+from src.report_generator import ReportGenerator # noqa: E402
+import tempfile
+from fastapi.responses import FileResponse
 
 
-logger = logging.getLogger("ergovision.server")
-logging.basicConfig(level=config.LOG_LEVEL, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 
+structlog.configure(
+    processors=[
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger("ergovision.server")
 
 app = FastAPI(title="ErgoVision", version="2.0.0")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception", exc_info=exc, path=request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Internal server error", "details": str(exc)}
+    )
 
 # ── CORS ─────────────────────────────────────────────
 
@@ -119,6 +145,26 @@ async def api_weekly_report(days: int = 7):
     """Return daily summaries for the last N days."""
     rows = runtime.db.get_weekly_summaries(days=days)
     return [dict(r) for r in rows]
+
+
+@app.get("/api/weekly-report/pdf")
+async def api_weekly_report_pdf():
+    """Generate and return a PDF report of the weekly wellness summary."""
+    try:
+        report_gen = ReportGenerator(runtime.db)
+        # Use a temporary file to avoid cluttering the workspace
+        tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        tmp_file.close()
+        pdf_path = report_gen.generate_weekly_report_pdf(output_path=tmp_file.name)
+        return FileResponse(
+            pdf_path, 
+            media_type="application/pdf", 
+            filename=f"ErgoVision_Report_{datetime.now().strftime('%Y-%m-%d')}.pdf",
+            background=None
+        )
+    except Exception as e:
+        logger.error("Failed to generate PDF", exc_info=e)
+        return JSONResponse(status_code=500, content={"message": "Failed to generate PDF."})
 
 
 @app.get("/api/break-stats")

@@ -321,6 +321,7 @@ export default function App() {
           {/* Metrics Grid */}
           <div className="metrics-grid">
             <MetricCard
+              className="animate-fade-in-up delay-100"
               title="Eye Strain"
               icon={<Eye size={14} />}
               value={isDetecting ? data.eye?.blink_rate ?? "--" : "--"}
@@ -331,6 +332,7 @@ export default function App() {
               trend={computeTrend(history, "blinkRate")}
             />
             <MetricCard
+              className="animate-fade-in-up delay-200"
               title="Posture"
               icon={<Activity size={14} />}
               value={isDetecting ? Math.round(data.posture?.deviation ?? 0) : "--"}
@@ -341,6 +343,7 @@ export default function App() {
               trend={computeTrend(history, "posture")}
             />
             <MetricCard
+              className="animate-fade-in-up delay-300"
               title="Distance"
               icon={<Ruler size={14} />}
               value={isDetecting ? Math.round(data.distance?.distance_cm ?? 0) : "--"}
@@ -351,6 +354,7 @@ export default function App() {
               trend={computeTrend(history, "distance")}
             />
             <MetricCard
+              className="animate-fade-in-up delay-400"
               title="Fatigue"
               icon={<Gauge size={14} />}
               value={isDetecting ? Math.round(data.fatigue?.fatigue_score ?? 0) : "--"}
@@ -361,6 +365,7 @@ export default function App() {
               trend={computeTrend(history, "fatigue")}
             />
             <MetricCard
+              className="animate-fade-in-up delay-500"
               title="Head Tilt"
               icon={<Brain size={14} />}
               value={isDetecting ? Math.round(Math.abs(data.head_tilt?.angle ?? 0)) : "--"}

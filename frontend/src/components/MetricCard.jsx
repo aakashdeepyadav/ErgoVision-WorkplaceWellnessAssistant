@@ -24,9 +24,10 @@ export default function MetricCard({
   accent,
   status = "good",
   trend,
+  className = "",
 }) {
   const cardClassName =
-    status === "alert" ? "metric-card metric-card--alert" : "metric-card";
+    status === "alert" ? `metric-card metric-card--alert ${className}` : `metric-card ${className}`;
 
   const trendDirection = TREND_META[trend?.direction]
     ? trend.direction
