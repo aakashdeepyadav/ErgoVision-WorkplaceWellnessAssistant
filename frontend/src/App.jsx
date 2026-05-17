@@ -409,6 +409,7 @@ export default function App() {
         <aside className="side-panel">
           {/* Webcam */}
           <div className="webcam-frame">
+            <div className="scanline" />
             {frame ? (
               <img src={`data:image/jpeg;base64,${frame}`} alt="Webcam" />
             ) : (
