@@ -14,11 +14,16 @@ It tracks **six health signals** from a standard webcam and provides immediate a
 ### Additional Features
 
 - 🌗 **Dark mode** — full dark/light theme toggle
+- 🍅 **Pomodoro timer** — 25m work → 5m break → 15m long break cycle, toggleable with 20-20-20 mode
+- 💧 **Hydration reminders** — periodic water drinking alerts with daily glass tracking and progress bar
+- 🧘 **Stretch suggestions** — random exercise shown during break overlays (6 pre-defined routines)
+- 🏆 **Posture streak** — live counter tracking consecutive good posture minutes with milestone badges
 - ☕ **20-20-20 break reminders** — adaptive break intervals based on fatigue level
 - 📊 **Wellness ring** — animated SVG ring showing real-time composite wellness score
 - 🎯 **Gaze indicator** — directional dot overlaid on webcam feed
 - 📈 **Productivity tracker** — healthy vs degraded time correlation
 - 🔔 **Progressive alert escalation** — cooldown reduces when alerts are ignored
+- 💡 **Context-aware wellness tips** — tailored advice based on current alert state
 - 📥 **CSV export** + daily/weekly summary analytics
 
 ## Why This Project Is Production-Oriented
@@ -35,7 +40,9 @@ It tracks **six health signals** from a standard webcam and provides immediate a
 
 ```text
 Webcam -> MediaPipe landmarks -> Detector modules -> SessionState -> AlertEngine
-                                                  -> Break Manager
+                                                  -> Break Manager (20-20-20 / Pomodoro)
+                                                  -> Hydration Tracker
+                                                  -> Posture Streak Tracker
                                                   -> Productivity Tracker
                                                   -> Snapshot/Event logging (SQLite)
                                                   -> WebSocket stream -> React dashboard
@@ -46,8 +53,8 @@ Webcam -> MediaPipe landmarks -> Detector modules -> SessionState -> AlertEngine
 - `server.py`: FastAPI entrypoint, HTTP/WebSocket routes, REST analytics API.
 - `src/runtime.py`: monitoring lifecycle, frame processing, command handling.
 - `src/detectors/`: eye fatigue, posture, distance, fatigue score, head tilt.
-- `src/alert_engine.py`: alert cooldown, progressive escalation, and dispatch.
-- `src/break_manager.py`: 20-20-20 rule tracking and compliance scoring.
+- `src/alert_engine.py`: alert cooldown, progressive escalation, and dispatch (9 alert types including `DRINK_WATER` and `POMODORO_BREAK`).
+- `src/break_manager.py`: 20-20-20 rule + Pomodoro timer, hydration tracking, posture streak, stretch suggestions.
 - `src/productivity_tracker.py`: healthy/degraded/absent time correlation.
 - `src/calibration.py`: posture/distance calibration state machine.
 - `src/database.py`: SQLite schema, migrations, and query operations.
@@ -223,7 +230,11 @@ Detector tuning still lives in `config.py`:
 - Detection thresholds (`EAR_THRESHOLD`, `MIN_DISTANCE_CM`, `HEAD_TILT_THRESHOLD_DEG`, etc.)
 - Alert cooldown (`ALERT_COOLDOWN_SECONDS`)
 - Break intervals (`BREAK_INTERVAL_SECONDS`, `MIN_BREAK_DURATION_SECONDS`)
+- Pomodoro settings (`POMODORO_WORK_MINUTES`, `POMODORO_SHORT_BREAK_MINUTES`, `POMODORO_LONG_BREAK_MINUTES`)
+- Hydration settings (`HYDRATION_INTERVAL_SECONDS`, `HYDRATION_DAILY_GOAL`)
 - Gaze tracking (`GAZE_STARE_SECONDS`, `GAZE_MOVEMENT_THRESHOLD`)
+- Stretch exercises (`STRETCH_EXERCISES` — list of 6 routines)
+- Posture streak milestones (`POSTURE_STREAK_MILESTONES`)
 
 ## Data Persistence
 

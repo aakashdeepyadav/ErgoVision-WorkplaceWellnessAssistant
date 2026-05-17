@@ -63,6 +63,23 @@ class SessionState:
             "on_break": False,
             "breaks_taken": 0,
             "break_compliance": 100.0,
+            "break_mode": "20-20-20",
+            # Pomodoro
+            "pomodoro_phase": "work",
+            "pomodoro_remaining": 0,
+            "pomodoro_cycle": 0,
+            "pomodoro_total_cycles": 0,
+            "pomodoro_break_due": False,
+            # Hydration
+            "hydration_glasses": 0,
+            "hydration_goal": 8,
+            "hydration_due": False,
+            # Posture streak
+            "posture_streak": 0.0,
+            "best_posture_streak": 0.0,
+            "posture_streak_milestone": "",
+            # Stretch
+            "current_stretch": None,
             # Productivity
             "healthy_time": 0.0,
             "degraded_time": 0.0,

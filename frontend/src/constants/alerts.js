@@ -34,6 +34,16 @@ export const ALERT_CONFIG = {
     color: 'break',
     message: 'You have been working for 20+ minutes. Take a 20-second break.',
   },
+  DRINK_WATER: {
+    label: 'Hydration',
+    color: 'hydration',
+    message: 'Time to drink water! Staying hydrated improves focus.',
+  },
+  POMODORO_BREAK: {
+    label: 'Pomodoro',
+    color: 'break',
+    message: 'Pomodoro session complete! Take a short break.',
+  },
 }
 
 export const DEFAULT_SETTINGS = {

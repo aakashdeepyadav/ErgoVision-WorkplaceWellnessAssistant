@@ -3,6 +3,7 @@ import {
   Eye, Ruler, Activity, Gauge, Brain,
   Settings, BarChart3, Maximize2, Minimize2,
   Clock, Bell, Sun, Moon, AlertTriangle,
+  Droplets, Timer, Trophy, Dumbbell,
 } from "lucide-react";
 import { useErgoVisionSocket } from "./hooks/useErgoVisionSocket";
 import { DEFAULT_SETTINGS } from "./constants/alerts";
@@ -131,6 +132,14 @@ export default function App() {
     setBreakDismissed(true);
   }, []);
 
+  const handleDrinkWater = useCallback(() => {
+    sendCommand("drink_water");
+  }, [sendCommand]);
+
+  const handleSetBreakMode = useCallback((mode) => {
+    sendCommand("set_break_mode", { mode });
+  }, [sendCommand]);
+
   const filteredAlerts = useMemo(() => {
     if (alertFilter === "all") return alerts;
     return alerts.filter((a) => a.color === alertFilter);
@@ -192,9 +201,22 @@ export default function App() {
           </div>
         </div>
         <div className="app-header__actions">
+          {/* Hydration Pill */}
+          <button
+            className={`hydration-pill ${breakStatus.hydration_due ? "hydration-pill--due" : ""}`}
+            onClick={handleDrinkWater}
+            title={`${breakStatus.hydration_glasses || 0}/${breakStatus.hydration_goal || 8} glasses — Click to log water`}
+          >
+            <Droplets size={12} />
+            {breakStatus.hydration_glasses || 0}/{breakStatus.hydration_goal || 8}
+          </button>
+          {/* Pomodoro/Break Pill */}
           <span className={breakPillClass}>
-            <Clock size={12} />
-            {formatBreakTime(breakStatus.time_since_break)}
+            {breakStatus.mode === "pomodoro" ? <Timer size={12} /> : <Clock size={12} />}
+            {breakStatus.mode === "pomodoro"
+              ? `${breakStatus.pomodoro_phase || "work"} · ${Math.ceil((breakStatus.pomodoro_remaining || 0) / 60)}m`
+              : formatBreakTime(breakStatus.time_since_break)
+            }
           </span>
           <span className={`app-header__status ${connected ? "app-header__status--active" : "app-header__status--inactive"}`}>
             <span className="app-header__status-dot" />
@@ -295,28 +317,7 @@ export default function App() {
             </article>
           </div>
 
-          {/* Webcam */}
-          <div className="webcam-frame">
-            {frame ? (
-              <img src={`data:image/jpeg;base64,${frame}`} alt="Webcam" />
-            ) : (
-              <div className="webcam-frame__placeholder">
-                <div className="webcam-frame__placeholder-icon">Camera</div>
-                <span className="text-muted">Waiting for frame data…</span>
-              </div>
-            )}
-            {frame && (
-              <>
-                <span className="webcam-frame__badge webcam-frame__badge--live">● Live</span>
-                <span className="webcam-frame__badge webcam-frame__badge--fps">
-                  {data?.fps || 0} FPS
-                </span>
-                {isDetecting && data?.eye && (
-                  <GazeIndicator gazeX={data.eye.gaze_x || 0} gazeY={data.eye.gaze_y || 0} />
-                )}
-              </>
-            )}
-          </div>
+
 
           {/* Metrics Grid */}
           <div className="metrics-grid">
@@ -406,6 +407,29 @@ export default function App() {
 
         {/* ── Side Panel ────────────────────── */}
         <aside className="side-panel">
+          {/* Webcam */}
+          <div className="webcam-frame">
+            {frame ? (
+              <img src={`data:image/jpeg;base64,${frame}`} alt="Webcam" />
+            ) : (
+              <div className="webcam-frame__placeholder">
+                <div className="webcam-frame__placeholder-icon">Camera</div>
+                <span className="text-muted">Waiting for frame data…</span>
+              </div>
+            )}
+            {frame && (
+              <>
+                <span className="webcam-frame__badge webcam-frame__badge--live">● Live</span>
+                <span className="webcam-frame__badge webcam-frame__badge--fps">
+                  {data?.fps || 0} FPS
+                </span>
+                {isDetecting && data?.eye && (
+                  <GazeIndicator gazeX={data.eye.gaze_x || 0} gazeY={data.eye.gaze_y || 0} />
+                )}
+              </>
+            )}
+          </div>
+
           <div className="session-info">
             <div className="session-info__title"><Clock size={13} /> Session</div>
             <div className="session-info__row">
@@ -428,6 +452,39 @@ export default function App() {
               <span className="session-info__label">Wellness</span>
               <span className="session-info__value">{score}/100</span>
             </div>
+          </div>
+
+          {/* Posture Streak */}
+          <div className="posture-streak">
+            <div className="posture-streak__title"><Trophy size={13} /> Posture Streak</div>
+            <div className="posture-streak__value">
+              {Math.floor((breakStatus.posture_streak || 0) / 60)}m {Math.floor((breakStatus.posture_streak || 0) % 60)}s
+            </div>
+            {breakStatus.best_posture_streak > 0 && (
+              <div className="posture-streak__best">
+                Best: {Math.floor(breakStatus.best_posture_streak / 60)}m
+              </div>
+            )}
+            {breakStatus.posture_streak_milestone && (
+              <div className="posture-streak__milestone">{breakStatus.posture_streak_milestone}</div>
+            )}
+          </div>
+
+          {/* Hydration Tracker */}
+          <div className="hydration-tracker">
+            <div className="hydration-tracker__title"><Droplets size={13} /> Hydration</div>
+            <div className="hydration-tracker__bar">
+              <div
+                className="hydration-tracker__fill"
+                style={{ width: `${Math.min(100, ((breakStatus.hydration_glasses || 0) / (breakStatus.hydration_goal || 8)) * 100)}%` }}
+              />
+            </div>
+            <div className="hydration-tracker__label">
+              {breakStatus.hydration_glasses || 0} / {breakStatus.hydration_goal || 8} glasses
+            </div>
+            <button className="btn btn--sm btn--accent" onClick={handleDrinkWater}>
+              <Droplets size={12} /> Drink Water
+            </button>
           </div>
 
           <div className="alert-feed">
@@ -479,6 +536,9 @@ export default function App() {
         visible={showBreakReminder}
         onDismiss={handleDismissBreak}
         onAcknowledge={handleAcknowledgeBreak}
+        stretch={breakStatus.current_stretch}
+        pomodoroPhase={breakStatus.pomodoro_phase}
+        breakMode={breakStatus.mode}
       />
 
       {/* ── Settings Drawer ─────────────────── */}

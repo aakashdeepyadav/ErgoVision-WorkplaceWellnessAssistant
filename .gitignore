@@ -1,55 +1,71 @@
-# Python bytecode and tooling caches
+# ── Python bytecode & tool caches ──
 __pycache__/
 *.py[cod]
+*.pyo
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .hypothesis/
 .tox/
 .nox/
+*.egg-info/
+*.egg
 
-# Python virtual environments
+# ── Virtual environments ──
 .venv/
 .venv312/
 venv/
 env/
 ENV/
 
-# Test and coverage artifacts
+# ── Test & coverage artifacts ──
 .coverage
 .coverage.*
 coverage.xml
 htmlcov/
 
-# Environment files (keep examples committed)
+# ── Environment files (keep examples committed) ──
 .env
 .env.*
 !.env.example
 
-# Local runtime data
+# ── Runtime data ──
 data/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
+calibration.json
 
-# Frontend dependency/build artifacts
+# ── Frontend build & dependency artifacts ──
 frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
 frontend/.vite/
 
-# Logs and temp files
+# ── Generated reports & one-off scripts ──
+*.docx
+*.pdf
+report_assets/
+generate_report.py
+enhance_report.py
+Project_Report_ErgoVision.md
+
+# ── Logs & temp files ──
 *.log
 logs/
 tmp/
 temp/
 
-# OS/editor files
+# ── OS & editor files ──
 .DS_Store
 Thumbs.db
+desktop.ini
 .vscode/
 .idea/
-
-# Local project artifacts (remove these lines if you intend to track them)
-Ergovision.pdf
-ergovision.txt
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

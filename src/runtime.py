@@ -196,6 +196,7 @@ class ErgoVisionRuntime:
             self.break_manager.update(
                 face_detected,
                 fatigue_score=fatigue_status["fatigue_score"],
+                posture_status=posture_status["status"],
             )
             self.productivity.update(face_detected, any_alert)
 
@@ -245,6 +246,23 @@ class ErgoVisionRuntime:
                 on_break=break_status["on_break"],
                 breaks_taken=break_status["breaks_taken"],
                 break_compliance=break_status["compliance"],
+                break_mode=break_status["mode"],
+                # Pomodoro
+                pomodoro_phase=break_status["pomodoro_phase"],
+                pomodoro_remaining=break_status["pomodoro_remaining"],
+                pomodoro_cycle=break_status["pomodoro_cycle"],
+                pomodoro_total_cycles=break_status["pomodoro_total_cycles"],
+                pomodoro_break_due=(break_status["break_due"] and break_status["mode"] == "pomodoro"),
+                # Hydration
+                hydration_glasses=break_status["hydration_glasses"],
+                hydration_goal=break_status["hydration_goal"],
+                hydration_due=break_status["hydration_due"],
+                # Posture streak
+                posture_streak=break_status["posture_streak"],
+                best_posture_streak=break_status["best_posture_streak"],
+                posture_streak_milestone=break_status["posture_streak_milestone"],
+                # Stretch
+                current_stretch=break_status["current_stretch"],
                 healthy_time=prod_status["healthy_time"],
                 degraded_time=prod_status["degraded_time"],
                 absent_time=prod_status["absent_time"],
@@ -343,6 +361,15 @@ class ErgoVisionRuntime:
 
         if command == "acknowledge_break":
             self.break_manager.acknowledge_break()
+            return
+
+        if command == "drink_water":
+            self.break_manager.drink_water()
+            return
+
+        if command == "set_break_mode":
+            mode = data.get("mode", "20-20-20")
+            self.break_manager.set_mode(mode)
             return
 
         if command == "update_settings":

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Coffee, X } from "lucide-react";
+import { Coffee, X, Dumbbell, Timer } from "lucide-react";
 
-export default function BreakReminder({ visible, onDismiss, onAcknowledge }) {
+export default function BreakReminder({ visible, onDismiss, onAcknowledge, stretch, pomodoroPhase, breakMode }) {
   const [countdown, setCountdown] = useState(20);
 
   useEffect(() => {
@@ -28,18 +28,40 @@ export default function BreakReminder({ visible, onDismiss, onAcknowledge }) {
 
   if (!visible) return null;
 
+  const isPomodoro = breakMode === "pomodoro";
+  const title = isPomodoro
+    ? (pomodoroPhase === "long_break" ? "Long Break Time! 🎉" : "Pomodoro Break!")
+    : "Time for a Break";
+
   return (
     <div className="break-overlay" onClick={onDismiss}>
       <div className="break-card" onClick={(e) => e.stopPropagation()}>
         <div className="break-card__icon">
-          <Coffee size={28} />
+          {isPomodoro ? <Timer size={28} /> : <Coffee size={28} />}
         </div>
-        <h2 className="break-card__title">Time for a Break</h2>
+        <h2 className="break-card__title">{title}</h2>
         <p className="break-card__text">
-          Look at something 20 feet away for 20 seconds to reduce eye strain.
+          {isPomodoro
+            ? `Great focus session! ${pomodoroPhase === "long_break" ? "Take a longer break — you've earned it." : "Rest your eyes and stretch."}`
+            : "Look at something 20 feet away for 20 seconds to reduce eye strain."
+          }
         </p>
+
+        {/* Stretch Suggestion */}
+        {stretch && (
+          <div className="break-card__stretch">
+            <div className="break-card__stretch-header">
+              <Dumbbell size={14} />
+              <span>Suggested Stretch</span>
+            </div>
+            <div className="break-card__stretch-name">{stretch.name}</div>
+            <div className="break-card__stretch-desc">{stretch.desc}</div>
+            <div className="break-card__stretch-time">~{stretch.duration}s</div>
+          </div>
+        )}
+
         <div className="break-card__timer">
-          {countdown > 0 ? `${countdown}s` : "Done!"}
+          {countdown > 0 ? `${countdown}s` : "Done! ✓"}
         </div>
         <div className="break-card__actions">
           <button className="btn btn--ghost" onClick={onDismiss}>

@@ -43,6 +43,8 @@ class AlertEngine:
             "HEAD_TILT": 0,
             "PROLONGED_STARE": 0,
             "TAKE_BREAK": 0,
+            "DRINK_WATER": 0,
+            "POMODORO_BREAK": 0,
         }
         self._ignore_count = {k: 0 for k in self._last_alert_time}
         self._alert_callback = None  # UI callback for popup notifications
@@ -201,6 +203,27 @@ class AlertEngine:
                     state.get("time_since_break", 0)
                 )
                 fired.append("TAKE_BREAK")
+
+        # Hydration reminder check
+        if state.get("hydration_due", False):
+            if self._can_alert("DRINK_WATER"):
+                self._fire_alert(
+                    "DRINK_WATER",
+                    "Time to drink water! Stay hydrated for better focus.",
+                    state.get("hydration_glasses", 0)
+                )
+                fired.append("DRINK_WATER")
+
+        # Pomodoro break check
+        if state.get("pomodoro_break_due", False):
+            if self._can_alert("POMODORO_BREAK"):
+                cycle = state.get("pomodoro_cycle", 0)
+                self._fire_alert(
+                    "POMODORO_BREAK",
+                    f"Pomodoro #{cycle} complete! Time for a break.",
+                    cycle
+                )
+                fired.append("POMODORO_BREAK")
 
         return fired
 

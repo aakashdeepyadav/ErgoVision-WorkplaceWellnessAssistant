@@ -53,8 +53,11 @@
 │                              ▼              ▼              ▼     │
 │                     ┌─────────────┐  ┌──────────┐  ┌──────────┐ │
 │                     │ Break Mgr   │  │ Prod.    │  │ SQLite   │ │
-│                     │ 20-20-20    │  │ Tracker  │  │ Database │ │
-│                     └─────────────┘  └──────────┘  └──────────┘ │
+│                     │ 20-20-20 /  │  │ Tracker  │  │ Database │ │
+│                     │ Pomodoro +  │  └──────────┘  └──────────┘ │
+│                     │ Hydration + │                              │
+│                     │ Streaks     │                              │
+│                     └─────────────┘                              │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -197,12 +200,37 @@ angle = atan2(right_eye_y - left_eye_y, right_eye_x - left_eye_x)
 
 Implements the **20-20-20 rule**: every 20 minutes, look 20 feet away for 20 seconds.
 
-**Features:**
+**Mode 1 — 20-20-20 Rule (Default):**
+- Triggers break every 20 minutes, expects 20-second break
 - Adaptive intervals — shortens to 70% when fatigue > 60, 85% when fatigue > 40
 - Natural break detection — face disappearing for > 20s = automatic break logged
 - Manual acknowledgment via UI button
 - Compliance scoring (0–100) based on expected vs actual breaks, with overdue penalties
 - Break overdue = 1.5× the interval without a break
+
+**Mode 2 — Pomodoro Timer:**
+- 25-minute work → 5-minute short break → repeat 4× → 15-minute long break
+- Header shows current phase (work/short_break/long_break) and remaining time
+- Break reminder overlay adapts messaging for Pomodoro context
+- Toggleable via WebSocket command `set_break_mode`
+
+**Hydration Tracking:**
+- Reminds user to drink water every 30 minutes (`HYDRATION_INTERVAL_SECONDS`)
+- Daily goal: 8 glasses (configurable via `HYDRATION_DAILY_GOAL`)
+- Header pill shows current count (e.g., `2/8`), clickable to log water
+- Side panel shows progress bar and "Drink Water" button
+- `DRINK_WATER` alert fires via voice TTS when hydration is due
+
+**Posture Streak:**
+- Tracks consecutive seconds of good posture (`posture_status` is `GOOD`)
+- Resets to 0 when posture degrades to `WARNING` or `ALERT`
+- Milestone messages at 5, 15, 30, and 60 minutes (configurable in `POSTURE_STREAK_MILESTONES`)
+- Best streak persisted per session
+
+**Stretch Suggestions:**
+- 6 pre-defined exercises: Neck Roll, Shoulder Shrug, Wrist Circles, Chest Opener, Seated Spinal Twist, Eye Palming
+- Random stretch selected when break is triggered (avoids repeating the last one)
+- Displayed in the Break Reminder overlay with name, description, and duration
 
 ### 4.2 Productivity Tracker (`src/productivity_tracker.py`)
 
@@ -217,7 +245,7 @@ Per-minute samples stored for hourly trend charts.
 
 ### 4.3 Alert Engine (`src/alert_engine.py`)
 
-**7 Alert Types:**
+**9 Alert Types:**
 | Type | Trigger | Default Cooldown |
 |------|---------|-----------------|
 | `EYE_STRAIN` | Low blink rate | 5 min |
@@ -227,6 +255,8 @@ Per-minute samples stored for hourly trend charts.
 | `HEAD_TILT` | Sustained head roll | 5 min |
 | `PROLONGED_STARE` | No saccade detected | 5 min |
 | `TAKE_BREAK` | Break overdue | 5 min |
+| `DRINK_WATER` | Hydration reminder due | 5 min |
+| `POMODORO_BREAK` | Pomodoro work phase ended | 5 min |
 
 **Progressive Escalation:** When alerts are ignored (same alert fires but is within cooldown), the cooldown multiplier reduces: 100% → 70% → 50%. Resets on successful fire.
 
@@ -251,9 +281,9 @@ Can be triggered via UI button or `POST /api/recalibrate`.
 
 ### 4.6 Session State (`src/session_state.py`)
 
-Thread-safe shared state container with 40+ fields. All detectors write, alert engine and UI read. Uses `threading.Lock` for atomic updates.
+Thread-safe shared state container with 50+ fields. All detectors write, alert engine and UI read. Uses `threading.Lock` for atomic updates.
 
-Key field groups: eye metrics, gaze tracking, posture metrics, distance, fatigue, head tilt, break status, productivity, system (FPS, face/pose detected, monitoring flags).
+Key field groups: eye metrics, gaze tracking, posture metrics, distance, fatigue, head tilt, break status (mode, pomodoro phase/remaining/cycle), hydration (glasses, goal, due), posture streak (current, best, milestone), stretch suggestion, productivity, system (FPS, face/pose detected, monitoring flags).
 
 ### 4.7 Database (`src/database.py`)
 
@@ -287,6 +317,8 @@ Auto-migration adds new columns to existing databases safely.
 | `recalibrate` | — | Restart calibration |
 | `toggle_voice` | — | Toggle voice alerts |
 | `acknowledge_break` | — | Log break taken |
+| `drink_water` | — | Log a glass of water consumed |
+| `set_break_mode` | `{mode: "pomodoro"}` | Switch between `20-20-20` and `pomodoro` |
 | `update_settings` | `{settings: {...}}` | Update thresholds at runtime |
 
 ### REST Endpoints
@@ -336,7 +368,7 @@ Auto-migration adds new columns to existing databases safely.
 | `SparklineChart` | `SparklineChart.jsx` | Mini area chart (Recharts) for metric trends |
 | `WellnessRing` | `WellnessRing.jsx` | Animated SVG arc showing composite wellness score |
 | `GazeIndicator` | `GazeIndicator.jsx` | Directional dot overlay on webcam feed |
-| `BreakReminder` | `BreakReminder.jsx` | Fullscreen overlay with 20s countdown timer |
+| `BreakReminder` | `BreakReminder.jsx` | Fullscreen overlay with countdown, Pomodoro-aware messaging, stretch suggestion card |
 | `SettingsDrawer` | `SettingsDrawer.jsx` | Slide-in panel for threshold configuration |
 | `AnalyticsModal` | `AnalyticsModal.jsx` | Full analytics with 5 area charts, range selector, CSV export |
 
@@ -353,7 +385,7 @@ Custom React hook managing:
 
 ### 6.4 Dashboard Layout
 
-**Header:** Logo, brand, break timer pill, live status badge, theme toggle, focus mode, analytics button, settings button.
+**Header:** Logo, brand, hydration pill (clickable glass counter), break/Pomodoro timer pill, live status badge, theme toggle, focus mode, analytics button, settings button.
 
 **Insight Strip (3 cards):**
 1. Wellness Ring — animated SVG score with tier label (Excellent/Balanced/At Risk/Critical)
@@ -366,7 +398,11 @@ Custom React hook managing:
 
 **Sparkline Grid (5 charts):** Rolling 30-sample mini charts for each metric.
 
-**Side Panel:** Session info card + scrollable alert feed with category filter chips.
+**Side Panel:**
+- Session info card (elapsed, alerts, breaks, compliance, wellness)
+- Posture Streak tracker (current streak, best, milestone badges)
+- Hydration Tracker (progress bar, glass count, "Drink Water" button)
+- Scrollable alert feed with category filter chips (All, Eye, Posture, Distance, Fatigue, Tilt, Break)
 
 **Focus Mode:** Hides side panel, expands webcam to 16:9, 5-column metric grid.
 
@@ -430,11 +466,27 @@ All values can be overridden via environment variables (prefix `ERGOVISION_`).
 | `HEAD_TILT_THRESHOLD_DEG` | `15` | Degrees for alert |
 | `HEAD_TILT_SUSTAINED_SECONDS` | `10` | Sustained duration |
 
-### Breaks
+### Breaks & Pomodoro
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BREAK_INTERVAL_SECONDS` | `1200` | 20 minutes |
+| `BREAK_INTERVAL_SECONDS` | `1200` | 20 minutes (20-20-20 mode) |
 | `MIN_BREAK_DURATION_SECONDS` | `20` | 20 seconds |
+| `POMODORO_WORK_MINUTES` | `25` | Pomodoro work phase |
+| `POMODORO_SHORT_BREAK_MINUTES` | `5` | Pomodoro short break |
+| `POMODORO_LONG_BREAK_MINUTES` | `15` | Pomodoro long break |
+| `POMODORO_CYCLES_BEFORE_LONG` | `4` | Work phases before long break |
+
+### Hydration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HYDRATION_INTERVAL_SECONDS` | `1800` | 30 min between reminders |
+| `HYDRATION_DAILY_GOAL` | `8` | Target glasses per day |
+
+### Stretch Exercises
+6 pre-defined routines in `STRETCH_EXERCISES` list, each with `name`, `desc`, and `duration` (seconds). Randomly selected during breaks.
+
+### Posture Streak
+Milestones at 300s (5 min), 900s (15 min), 1800s (30 min), and 3600s (60 min) with motivational messages.
 
 ### Alerts
 | Variable | Default | Description |
@@ -459,9 +511,9 @@ ErgoVision/
 │   ├── __init__.py
 │   ├── runtime.py               # Frame processing orchestrator
 │   ├── camera.py                # OpenCV + MediaPipe wrapper
-│   ├── session_state.py         # Thread-safe shared state (40+ fields)
-│   ├── alert_engine.py          # 7 alert types + progressive escalation
-│   ├── break_manager.py         # 20-20-20 rule + compliance tracking
+│   ├── session_state.py         # Thread-safe shared state (50+ fields)
+│   ├── alert_engine.py          # 9 alert types + progressive escalation
+│   ├── break_manager.py         # 20-20-20 / Pomodoro + hydration + posture streak + stretch
 │   ├── productivity_tracker.py  # Healthy/degraded/absent time tracking
 │   ├── calibration.py           # Two-phase calibration state machine
 │   ├── database.py              # SQLite with 5 tables + auto-migration
@@ -488,7 +540,7 @@ ErgoVision/
 │       │   └── useErgoVisionSocket.js  # WebSocket state management
 │       ├── components/
 │       │   ├── AnalyticsModal.jsx      # 5 area charts + CSV export
-│       │   ├── BreakReminder.jsx       # 20s countdown overlay
+│       │   ├── BreakReminder.jsx       # Countdown + stretch suggestion + Pomodoro-aware
 │       │   ├── CalibrationOverlay.jsx  # Calibration progress modal
 │       │   ├── ConnectionState.jsx     # Pre-connect consent screen
 │       │   ├── GazeIndicator.jsx       # Directional dot on webcam

@@ -103,6 +103,55 @@ BREAK_INTERVAL_SECONDS = 20 * 60  # 20 minutes
 MIN_BREAK_DURATION_SECONDS = 20   # 20 seconds minimum to count as a break
 
 # ──────────────────────────────────────────────
+# Pomodoro Timer
+# ──────────────────────────────────────────────
+POMODORO_WORK_MINUTES = 25         # Work phase duration
+POMODORO_SHORT_BREAK_MINUTES = 5   # Short break duration
+POMODORO_LONG_BREAK_MINUTES = 15   # Long break after full cycle
+POMODORO_CYCLES_BEFORE_LONG = 4    # Number of work sessions before long break
+
+# ──────────────────────────────────────────────
+# Hydration Reminders
+# ──────────────────────────────────────────────
+HYDRATION_INTERVAL_SECONDS = 30 * 60  # Remind every 30 minutes
+HYDRATION_DAILY_GOAL = 8              # Glasses of water per day
+
+# ──────────────────────────────────────────────
+# Posture Streak
+# ──────────────────────────────────────────────
+POSTURE_STREAK_MILESTONES = {
+    5: "Nice! 5 minutes of good posture 🎯",
+    15: "Great job! 15-minute posture streak 💪",
+    30: "Amazing! 30-minute posture streak 🔥",
+    60: "Incredible! 1 hour of perfect posture 🏆",
+}
+
+# ──────────────────────────────────────────────
+# Stretch Suggestions
+# ──────────────────────────────────────────────
+STRETCH_EXERCISES = [
+    {"name": "Neck Roll", "desc": "Slowly roll your head in a circle — 5 times each direction. Relieves neck tension.", "duration": 30},
+    {"name": "Shoulder Shrug", "desc": "Raise shoulders to ears, hold 5s, release. Repeat 5 times.", "duration": 25},
+    {"name": "Wrist Circles", "desc": "Extend arms, rotate wrists 10 times each direction. Prevents RSI.", "duration": 20},
+    {"name": "Chest Opener", "desc": "Clasp hands behind back, squeeze shoulder blades, hold 15s. Opens chest.", "duration": 20},
+    {"name": "Seated Spinal Twist", "desc": "Sit tall, twist torso left then right, hold each 10s.", "duration": 25},
+    {"name": "Eye Palming", "desc": "Rub palms warm, cup over closed eyes for 20s. Relaxes eye muscles.", "duration": 20},
+]
+
+# ──────────────────────────────────────────────
+# Wellness Tips (context-aware)
+# ──────────────────────────────────────────────
+WELLNESS_TIPS = {
+    "EYE_STRAIN": "Try the 20-20-20 rule: every 20 min, look 20 feet away for 20 seconds.",
+    "POOR_POSTURE": "Adjust your chair so feet are flat and screen is at eye level.",
+    "TOO_CLOSE": "The ideal screen distance is 50–70 cm (an arm's length).",
+    "FATIGUE": "A short walk or fresh air can quickly restore mental alertness.",
+    "HEAD_TILT": "Check if your monitor is centered — an offset screen causes tilt.",
+    "HYDRATION": "Staying hydrated improves concentration and reduces headaches.",
+    "GENERAL": "Regular micro-breaks are more effective than one long break.",
+}
+
+# ──────────────────────────────────────────────
 # Alert Engine
 # ──────────────────────────────────────────────
 ALERT_COOLDOWN_SECONDS = 300   # 5 minutes between same alert type
@@ -124,6 +173,8 @@ ALERT_MESSAGES = {
     "HEAD_TILT": "Your head is tilted to one side. Straighten your neck to reduce strain.",
     "PROLONGED_STARE": "You have been staring without blinking for a long time. Look away briefly.",
     "TAKE_BREAK": "You have been working for over 20 minutes. Take a 20-second break and look away.",
+    "DRINK_WATER": "Time to hydrate! Drink a glass of water to stay focused and healthy.",
+    "POMODORO_BREAK": "Pomodoro complete! Take a short break — stretch and rest your eyes.",
 }
 
 # ──────────────────────────────────────────────
